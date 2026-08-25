@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="{{ default_theme }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{{ app_name }} - Login</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="/static/webauthn.js"></script>
+</head>
+<body>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Theme wechseln">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+    </button>
+
+    <div class="container">
+        <div class="login-brand">
+            <svg class="brand-logo" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom: 1rem;">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+            <h1>{{ app_name }}</h1>
+            <h2 id="login-subtitle" style="font-weight:400; opacity:0.8; margin-bottom: 1rem;">Anmelden</h2>
+        </div>
+
+        <div id="pin-section" style="display: none;">
+            <form id="pin-form" autocomplete="off">
+                <div class="pin-container" id="pin-container"></div>
+                <button type="submit" id="pin-submit">Anmelden</button>
+                <div style="margin-top: 1rem;">
+                    <label style="font-size: 0.875rem; display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer;">
+                        <input type="checkbox" id="remember-me">
+                        Angemeldet bleiben
+                    </label>
+                </div>
+            </form>
+        </div>
+
+        <div id="passkey-section" style="display: none;">
+            <div class="divider" style="margin: 1.5rem 0; opacity: 0.6;">oder</div>
+            <div class="passkey-wrap">
+                <button id="passkey-btn" class="passkey-btn" type="button">
+                    <svg id="passkey-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 8px;">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        <circle cx="12" cy="16" r="1.5" fill="currentColor"></circle>
+                    </svg>
+                    <span class="passkey-spinner" id="passkey-spinner" style="display:none"></span>
+                    <span id="passkey-label">Mit Passkey / YubiKey anmelden</span>
+                </button>
+                <p id="passkey-note" class="passkey-note" style="display:none; font-size: 0.8rem; opacity: 0.7; margin-top: 0.5rem;"></p>
+            </div>
+        </div>
+
+        <p id="pin-error" class="error-message"></p>
+    </div>
+
+    <script>
+        const AUTH_MODE = "{{ auth_mode }}";
+        const PIN_LENGTH = {{ pin_length }};
+
+        // --- Theme Toggle ---
+        const themeToggle = document.getElementById('theme-toggle');
+        const htmlEl = document.documentElement;
+        themeToggle.addEventListener('click', () => {
+            const current = htmlEl.getAttribute('data-theme');
+            htmlEl.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+        });
+
+        // --- Section visibility based on AUTH_MODE ---
+        const pinSection = document.getElementById('pin-section');
+        const passkeySection = document.getElementById('passkey-section');
+        const errorEl = document.getElementById('pin-error');
+
+        if (AUTH_MODE === 'pin' || AUTH_MODE === 'both') {
+            pinSection.style.display = 'block';
+            buildPinInputs();
+        }
+        if (AUTH_MODE === 'passkey' || AUTH_MODE === 'both') {
+            passkeySection.style.display = 'block';
+        }
+
+        function buildPinInputs() {
+            const container = document.getElementById('pin-container');
+            container.innerHTML = '';
+            for (let i = 0; i < PIN_LENGTH; i++) {
+                const input = document.createElement('input');
+                input.type = 'password';
+                input.inputMode = 'numeric';
+                input.maxLength = 1;
+                input.className = 'pin-digit';
+                input.dataset.index = i;
+                container.appendChild(input);
+            }
+            const digits = container.querySelectorAll('.pin-digit');
+            digits.forEach((digit, idx) => {
+                digit.addEventListener('input', (e) => {
+                    if (e.target.value) {
+                        e.target.classList.add('filled');
+                        if (idx < digits.length - 1) digits[idx + 1].focus();
+                    } else {
+                        e.target.classList.remove('filled');
+                    }
+                });
+                digit.addEventListener('keydown', (e) => {
+                    if (e.key === 'Backspace' && !e.target.value && idx > 0) {
+                        digits[idx - 1].focus();
+                    }
+                });
+            });
+            if (digits.length) digits[0].focus();
+        }
+
+        document.getElementById('pin-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorEl.textContent = '';
+            const digits = [...document.querySelectorAll('.pin-digit')].map(i => i.value).join('');
+            if (digits.length !== PIN_LENGTH) {
+                errorEl.textContent = 'Bitte vollständige PIN eingeben';
+                return;
+            }
+            const rememberMe = document.getElementById('remember-me').checked;
+            try {
+                const res = await fetch('/api/auth/verify-pin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pin: digits, remember_me: rememberMe })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Login fehlgeschlagen');
+                }
+                window.location.href = '/';
+            } catch (err) {
+                errorEl.textContent = err.message;
+                buildPinInputs();
+            }
+        });
+
+        // --- Passkey Login ---
+        const passkeyBtn = document.getElementById('passkey-btn');
+        const passkeySpinner = document.getElementById('passkey-spinner');
+        const passkeyLabel = document.getElementById('passkey-label');
+        const passkeyNote = document.getElementById('passkey-note');
+
+        if (!window.PublicKeyCredential && passkeySection.style.display !== 'none') {
+            passkeyNote.textContent = 'WebAuthn wird von diesem Browser nicht unterstützt.';
+            passkeyNote.style.display = 'block';
+            passkeyBtn.disabled = true;
+        }
+
+        passkeyBtn?.addEventListener('click', async () => {
+            errorEl.textContent = '';
+            passkeyBtn.disabled = true;
+            passkeySpinner.style.display = 'inline-block';
+            passkeyLabel.textContent = 'Warte auf Passkey...';
+            try {
+                const optionsRes = await fetch('/api/passkey/auth-options', { method: 'POST' });
+                if (!optionsRes.ok) throw new Error('Konnte Passkey-Optionen nicht laden');
+                const options = await optionsRes.json();
+
+                const publicKey = toAuthOptions(options);
+                const assertion = await navigator.credentials.get({ publicKey });
+                const assertionJSON = authToJSON(assertion);
+
+                const rememberMe = document.getElementById('remember-me')?.checked || false;
+                const verifyRes = await fetch('/api/passkey/auth-verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ credential: assertionJSON, remember_me: rememberMe })
+                });
+                if (!verifyRes.ok) {
+                    const err = await verifyRes.json();
+                    throw new Error(err.detail || 'Passkey-Login fehlgeschlagen');
+                }
+                window.location.href = '/';
+            } catch (err) {
+                errorEl.textContent = err.message || 'Passkey-Login abgebrochen';
+            } finally {
+                passkeyBtn.disabled = false;
+                passkeySpinner.style.display = 'none';
+                passkeyLabel.textContent = 'Mit Passkey / YubiKey anmelden';
+            }
+        });
+    </script>
+</body>
+</html>

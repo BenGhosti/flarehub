@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="{{ default_theme }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{{ app_name }} - Einstellungen</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="/static/webauthn.js"></script>
+</head>
+<body>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Theme wechseln">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+    </button>
+
+    <div class="container" style="max-width: 640px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 1.5rem;">
+            <h1 style="font-size: 1.6rem; text-align:left;">Einstellungen</h1>
+            <a href="/" style="font-size: 0.85rem; color: var(--highlight-color); text-decoration:none;">← Zurück zum Dashboard</a>
+        </div>
+
+        {% if not admin_token_configured %}
+        <div class="card" style="border-left: 4px solid var(--danger-color); text-align:left;">
+            <strong>⚠️ Kein Admin-Token konfiguriert</strong>
+            <p style="font-size: 0.9rem; margin-top: 4px; opacity: 0.8;">Bitte <code>ADMIN_TOKEN</code> in der .env setzen, um die Passkey-Verwaltung freizuschalten.</p>
+        </div>
+        {% else %}
+
+        <!-- Admin-Token-Gate -->
+        <div class="card" id="admin-gate-card" style="text-align:left;">
+            <h3 style="margin-bottom: 0.75rem;">Passkey-Verwaltung entsperren</h3>
+            <p style="font-size: 0.85rem; opacity: 0.75; margin-bottom: 1rem;">
+                Zum Hinzufügen oder Löschen von Passkeys ist zusätzlich das Admin-Token aus deiner .env erforderlich.
+            </p>
+            <form id="admin-token-form" style="display:flex; gap: 0.5rem; flex-wrap: wrap;">
+                <input type="password" id="admin-token-input" placeholder="Admin-Token" autocomplete="off"
+                       style="flex:1; min-width: 200px; padding: 10px 12px; border-radius: 6px; border: 2px solid var(--border-color); background: var(--textarea-bg); color: var(--text-color); font-size: 0.9rem;">
+                <button type="submit">Entsperren</button>
+            </form>
+            <p id="admin-token-error" class="error-message" style="text-align:left;"></p>
+        </div>
+
+        <!-- Passkey-Verwaltung (nur sichtbar nach Entsperren) -->
+        <div class="card" id="passkey-management-card" style="display:none; text-align:left;">
+            <h3 style="margin-bottom: 1rem;">Registrierte Passkeys</h3>
+            <div id="passkey-list-container">
+                <p style="opacity:0.6; font-size:0.9rem;">Lade Passkeys...</p>
+            </div>
+
+            <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-color);">
+                <h4 style="margin-bottom: 0.75rem; font-size: 0.95rem;">Neuen Passkey hinzufügen</h4>
+                <form id="add-passkey-form" style="display:flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <input type="text" id="passkey-nickname" placeholder="Name (z.B. YubiKey Büro)" autocomplete="off"
+                           style="flex:1; min-width: 200px; padding: 10px 12px; border-radius: 6px; border: 2px solid var(--border-color); background: var(--textarea-bg); color: var(--text-color); font-size: 0.9rem;">
+                    <button type="submit" id="add-passkey-btn">+ Passkey registrieren</button>
+                </form>
+                <p id="add-passkey-feedback" style="font-size: 0.85rem; margin-top: 0.5rem; min-height: 1.2em;"></p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <style>
+        .card {
+            background: var(--container-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 1rem;
+        }
+        .passkey-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.9rem;
+        }
+        .passkey-row:last-child { border-bottom: none; }
+        .passkey-meta { opacity: 0.6; font-size: 0.78rem; margin-top: 2px; }
+        .btn-danger {
+            background: var(--danger-color);
+            padding: 6px 12px;
+            font-size: 0.8rem;
+        }
+        .btn-danger:hover { background: #d32f2f; }
+    </style>
+
+    <script>
+        document.getElementById('theme-toggle').addEventListener('click', () => {
+            const html = document.documentElement;
+            html.setAttribute('data-theme', html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+        });
+
+        const adminGateCard = document.getElementById('admin-gate-card');
+        const managementCard = document.getElementById('passkey-management-card');
+        const adminError = document.getElementById('admin-token-error');
+
+        async function checkAdminStatus() {
+            const res = await fetch('/api/admin/status');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (data.admin_unlocked) {
+                unlockManagement();
+            }
+        }
+
+        function unlockManagement() {
+            adminGateCard.style.display = 'none';
+            managementCard.style.display = 'block';
+            loadPasskeys();
+        }
+
+        document.getElementById('admin-token-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            adminError.textContent = '';
+            const token = document.getElementById('admin-token-input').value;
+            try {
+                const res = await fetch('/api/admin/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Ungültiges Token');
+                }
+                unlockManagement();
+            } catch (err) {
+                adminError.textContent = err.message;
+            }
+        });
+
+        async function loadPasskeys() {
+            const container = document.getElementById('passkey-list-container');
+            const res = await fetch('/api/passkey/list');
+            if (!res.ok) {
+                container.innerHTML = '<p style="opacity:0.6; font-size:0.9rem;">Konnte Passkeys nicht laden.</p>';
+                return;
+            }
+            const passkeys = await res.json();
+            if (!passkeys.length) {
+                container.innerHTML = '<p style="opacity:0.6; font-size:0.9rem;">Noch keine Passkeys registriert.</p>';
+                return;
+            }
+            container.innerHTML = passkeys.map(p => `
+                <div class="passkey-row" data-id="${p.id}">
+                    <div>
+                        <div>${p.nickname}</div>
+                        <div class="passkey-meta">
+                            Erstellt: ${p.created_at ? new Date(p.created_at).toLocaleString('de-DE') : '–'}
+                            ${p.last_used_at ? ' · Zuletzt genutzt: ' + new Date(p.last_used_at).toLocaleString('de-DE') : ' · Noch nicht genutzt'}
+                        </div>
+                    </div>
+                    <button class="btn-danger" type="button" onclick="deletePasskey(${p.id})">Löschen</button>
+                </div>
+            `).join('');
+        }
+
+        async function deletePasskey(id) {
+            if (!confirm('Diesen Passkey wirklich löschen?')) return;
+            try {
+                const res = await fetch(`/api/passkey/${id}`, { method: 'DELETE' });
+                if (!res.ok) throw new Error((await res.json()).detail);
+                loadPasskeys();
+            } catch (err) {
+                alert('Fehler beim Löschen: ' + err.message);
+            }
+        }
+
+        document.getElementById('add-passkey-form')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const feedback = document.getElementById('add-passkey-feedback');
+            const btn = document.getElementById('add-passkey-btn');
+            const nickname = document.getElementById('passkey-nickname').value || 'Passkey';
+            feedback.textContent = '';
+            feedback.style.color = '';
+            btn.disabled = true;
+
+            try {
+                const optionsRes = await fetch('/api/passkey/register-options', { method: 'POST' });
+                if (!optionsRes.ok) throw new Error((await optionsRes.json()).detail || 'Konnte Optionen nicht laden');
+                const options = await optionsRes.json();
+
+                const publicKey = toRegistrationOptions(options);
+                const credential = await navigator.credentials.create({ publicKey });
+                const credentialJSON = registrationToJSON(credential);
+
+                const verifyRes = await fetch('/api/passkey/register-verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ credential: credentialJSON, nickname })
+                });
+                if (!verifyRes.ok) throw new Error((await verifyRes.json()).detail || 'Registrierung fehlgeschlagen');
+
+                feedback.style.color = 'var(--highlight-color)';
+                feedback.textContent = 'Passkey erfolgreich registriert.';
+                document.getElementById('passkey-nickname').value = '';
+                loadPasskeys();
+            } catch (err) {
+                feedback.style.color = 'var(--danger-color)';
+                feedback.textContent = err.message || 'Registrierung abgebrochen';
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        if (!window.PublicKeyCredential) {
+            document.getElementById('add-passkey-btn')?.setAttribute('disabled', 'true');
+        }
+
+        checkAdminStatus();
+    </script>
+</body>
+</html>

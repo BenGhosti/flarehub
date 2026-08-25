@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="{{ default_theme }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{{ app_name }}</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+</head>
+<body>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Theme wechseln">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+    </button>
+
+    <div class="container" style="max-width: 1100px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 1.5rem;">
+            <h1 style="font-size: 1.8rem; text-align:left;">{{ app_name }}</h1>
+            <div style="display:flex; gap: 0.5rem;">
+                <a href="/settings" style="text-decoration:none;">
+                    <button type="button" style="background: var(--secondary-color); color: var(--text-color); padding: 8px 16px; font-size: 0.85rem;">Einstellungen</button>
+                </a>
+                <button id="logout-btn" type="button" style="background: var(--secondary-color); color: var(--text-color); padding: 8px 16px; font-size: 0.85rem;">Abmelden</button>
+            </div>
+        </div>
+
+        {% if not zone_configured %}
+        <div class="card" style="border-left: 4px solid var(--danger-color); text-align:left;">
+            <strong>⚠️ Cloudflare nicht konfiguriert</strong>
+            <p style="font-size: 0.9rem; margin-top: 4px; opacity: 0.8;">Bitte CLOUDFLARE_API_TOKEN und CLOUDFLARE_ZONE_ID in der .env setzen.</p>
+        </div>
+        {% endif %}
+
+        <!-- Summary Cards -->
+        <div class="summary-grid">
+            <div class="card summary-card">
+                <span class="summary-label">Requests (24h)</span>
+                <span class="summary-value" id="stat-requests">–</span>
+            </div>
+            <div class="card summary-card">
+                <span class="summary-label">Cache-Ratio</span>
+                <span class="summary-value" id="stat-cache-ratio">–</span>
+            </div>
+            <div class="card summary-card">
+                <span class="summary-label">Bandbreite (24h)</span>
+                <span class="summary-value" id="stat-bandwidth">–</span>
+            </div>
+            <div class="card summary-card">
+                <span class="summary-label">Threats (24h)</span>
+                <span class="summary-value" id="stat-threats">–</span>
+            </div>
+        </div>
+
+        {% if feature_quick_actions %}
+        <div class="card" style="text-align:left;">
+            <h3 style="margin-bottom: 1rem;">Quick Actions</h3>
+            <div class="actions-grid">
+                {% if feature_dev_mode_toggle %}
+                <div class="action-item">
+                    <span>Development Mode</span>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-dev-mode">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                {% endif %}
+                {% if feature_under_attack_toggle %}
+                <div class="action-item">
+                    <span>Under Attack Mode</span>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-under-attack">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                {% endif %}
+                {% if feature_purge_cache %}
+                <div class="action-item">
+                    <span>Cache leeren</span>
+                    <button id="btn-purge-cache" type="button" style="padding: 6px 14px; font-size: 0.85rem;">Purge</button>
+                </div>
+                {% endif %}
+            </div>
+            <p id="action-feedback" style="font-size: 0.8rem; margin-top: 0.75rem; min-height: 1.2em;"></p>
+        </div>
+        {% endif %}
+
+        {% if feature_requests_chart %}
+        <div class="card" style="text-align:left;">
+            <h3 style="margin-bottom: 1rem;">Requests</h3>
+            <canvas id="chart-requests" height="90"></canvas>
+        </div>
+        {% endif %}
+
+        {% if feature_bandwidth_chart %}
+        <div class="card" style="text-align:left;">
+            <h3 style="margin-bottom: 1rem;">Bandbreite (MB)</h3>
+            <canvas id="chart-bandwidth" height="90"></canvas>
+        </div>
+        {% endif %}
+
+        {% if feature_threats_chart %}
+        <div class="card" style="text-align:left;">
+            <h3 style="margin-bottom: 1rem;">Threats</h3>
+            <canvas id="chart-threats" height="90"></canvas>
+        </div>
+        {% endif %}
+
+        {% if feature_security_feed %}
+        <div class="card" style="text-align:left;">
+            <h3 style="margin-bottom: 1rem;">Security-Feed</h3>
+            <div style="overflow-x:auto;">
+                <table class="feed-table" id="security-feed-table">
+                    <thead>
+                        <tr><th>Zeit</th><th>IP</th><th>Land</th><th>Aktion</th><th>Pfad</th></tr>
+                    </thead>
+                    <tbody id="security-feed-body">
+                        <tr><td colspan="5" style="opacity:0.6;">Lade Daten...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <style>
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        .card {
+            background: var(--container-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 1rem 1.25rem;
+            margin-bottom: 1rem;
+        }
+        .summary-card { display: flex; flex-direction: column; gap: 4px; }
+        .summary-label { font-size: 0.75rem; opacity: 0.65; text-transform: uppercase; letter-spacing: 0.03em; }
+        .summary-value { font-size: 1.5rem; font-weight: 700; color: var(--highlight-color); }
+        .actions-grid { display: flex; flex-direction: column; gap: 0.75rem; }
+        .action-item { display: flex; align-items: center; justify-content: space-between; }
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top:0; left:0; right:0; bottom:0; background-color: var(--secondary-color); transition: .3s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--highlight-color); }
+        input:checked + .slider:before { transform: translateX(20px); }
+        .feed-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .feed-table th, .feed-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border-color); }
+        .feed-table th { opacity: 0.65; font-weight: 600; text-transform: uppercase; font-size: 0.7rem; }
+    </style>
+
+    <script>
+        const AUTO_REFRESH_SECONDS = {{ auto_refresh_seconds }};
+
+        // --- Theme Toggle ---
+        const themeToggle = document.getElementById('theme-toggle');
+        document.getElementById('theme-toggle').addEventListener('click', () => {
+            const html = document.documentElement;
+            html.setAttribute('data-theme', html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+        });
+
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            window.location.href = '/login';
+        });
+
+        function fmtNumber(n) {
+            return new Intl.NumberFormat('de-DE').format(n);
+        }
+
+        async function loadSummary() {
+            const res = await fetch('/api/analytics/summary');
+            if (!res.ok) return;
+            const data = await res.json();
+            document.getElementById('stat-requests').textContent = fmtNumber(data.requests_24h);
+            document.getElementById('stat-cache-ratio').textContent = data.cache_ratio_pct + '%';
+            document.getElementById('stat-bandwidth').textContent = fmtNumber(data.bandwidth_24h_mb) + ' MB';
+            document.getElementById('stat-threats').textContent = fmtNumber(data.threats_24h);
+        }
+
+        let chartRequests, chartBandwidth, chartThreats;
+        const chartColors = { primary: '#FF5E1F', secondary: '#999' };
+
+        function chartOptions(extra = {}) {
+            return Object.assign({
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-color') } } },
+                scales: {
+                    x: { ticks: { color: '#888', maxTicksLimit: 8 }, grid: { display: false } },
+                    y: { ticks: { color: '#888' }, grid: { color: 'rgba(128,128,128,0.15)' } }
+                }
+            }, extra);
+        }
+
+        async function loadTimeseries() {
+            const res = await fetch('/api/analytics/timeseries?hours=24');
+            if (!res.ok) return;
+            const data = await res.json();
+
+            const reqCanvas = document.getElementById('chart-requests');
+            if (reqCanvas) {
+                if (chartRequests) chartRequests.destroy();
+                chartRequests = new Chart(reqCanvas, {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [
+                            { label: 'Total', data: data.requests_total, borderColor: chartColors.primary, backgroundColor: 'rgba(255,94,31,0.1)', fill: true, tension: 0.3 },
+                            { label: 'Cached', data: data.requests_cached, borderColor: chartColors.secondary, tension: 0.3 }
+                        ]
+                    },
+                    options: chartOptions()
+                });
+            }
+
+            const bwCanvas = document.getElementById('chart-bandwidth');
+            if (bwCanvas) {
+                if (chartBandwidth) chartBandwidth.destroy();
+                chartBandwidth = new Chart(bwCanvas, {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [
+                            { label: 'Bandbreite (MB)', data: data.bandwidth_total_mb, borderColor: chartColors.primary, backgroundColor: 'rgba(255,94,31,0.1)', fill: true, tension: 0.3 }
+                        ]
+                    },
+                    options: chartOptions()
+                });
+            }
+
+            const threatsCanvas = document.getElementById('chart-threats');
+            if (threatsCanvas) {
+                if (chartThreats) chartThreats.destroy();
+                chartThreats = new Chart(threatsCanvas, {
+                    type: 'bar',
+                    data: {
+                        labels: data.labels,
+                        datasets: [
+                            { label: 'Threats', data: data.threats_total, backgroundColor: 'rgba(244,67,54,0.6)' }
+                        ]
+                    },
+                    options: chartOptions()
+                });
+            }
+        }
+
+        async function loadSecurityFeed() {
+            const body = document.getElementById('security-feed-body');
+            if (!body) return;
+            const res = await fetch('/api/security/feed');
+            if (!res.ok) return;
+            const events = await res.json();
+            if (!events.length) {
+                body.innerHTML = '<tr><td colspan="5" style="opacity:0.6;">Keine Ereignisse im gewählten Zeitraum</td></tr>';
+                return;
+            }
+            body.innerHTML = events.map(e => `
+                <tr>
+                    <td>${new Date(e.timestamp).toLocaleString('de-DE')}</td>
+                    <td>${e.client_ip || '–'}</td>
+                    <td>${e.country || '–'}</td>
+                    <td>${e.action || '–'}</td>
+                    <td style="max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${e.path || '–'}</td>
+                </tr>
+            `).join('');
+        }
+
+        async function loadZoneStatus() {
+            const res = await fetch('/api/zone/status');
+            if (!res.ok) return;
+            const data = await res.json();
+            const devToggle = document.getElementById('toggle-dev-mode');
+            const uaToggle = document.getElementById('toggle-under-attack');
+            if (devToggle) devToggle.checked = data.development_mode;
+            if (uaToggle) uaToggle.checked = data.under_attack_mode;
+        }
+
+        function showFeedback(msg, isError = false) {
+            const el = document.getElementById('action-feedback');
+            if (!el) return;
+            el.textContent = msg;
+            el.style.color = isError ? 'var(--danger-color)' : 'var(--highlight-color)';
+            setTimeout(() => { el.textContent = ''; }, 4000);
+        }
+
+        document.getElementById('toggle-dev-mode')?.addEventListener('change', async (e) => {
+            try {
+                const res = await fetch('/api/zone/dev-mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: e.target.checked })
+                });
+                if (!res.ok) throw new Error((await res.json()).detail);
+                showFeedback('Development Mode aktualisiert');
+            } catch (err) {
+                showFeedback('Fehler: ' + err.message, true);
+                e.target.checked = !e.target.checked;
+            }
+        });
+
+        document.getElementById('toggle-under-attack')?.addEventListener('change', async (e) => {
+            try {
+                const res = await fetch('/api/zone/under-attack', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: e.target.checked })
+                });
+                if (!res.ok) throw new Error((await res.json()).detail);
+                showFeedback('Under Attack Mode aktualisiert');
+            } catch (err) {
+                showFeedback('Fehler: ' + err.message, true);
+                e.target.checked = !e.target.checked;
+            }
+        });
+
+        document.getElementById('btn-purge-cache')?.addEventListener('click', async (e) => {
+            e.target.disabled = true;
+            try {
+                const res = await fetch('/api/zone/purge-cache', { method: 'POST' });
+                if (!res.ok) throw new Error((await res.json()).detail);
+                showFeedback('Cache erfolgreich geleert');
+            } catch (err) {
+                showFeedback('Fehler: ' + err.message, true);
+            } finally {
+                e.target.disabled = false;
+            }
+        });
+
+        async function refreshAll() {
+            await Promise.all([loadSummary(), loadTimeseries(), loadSecurityFeed(), loadZoneStatus()]);
+        }
+
+        refreshAll();
+        if (AUTO_REFRESH_SECONDS > 0) {
+            setInterval(refreshAll, AUTO_REFRESH_SECONDS * 1000);
+        }
+    </script>
+</body>
+</html>
