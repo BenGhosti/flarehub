@@ -57,6 +57,23 @@ Schlankes Cloudflare Analytics & Quick Actions Dashboard für Unraid/Docker.
    Hürde getrennt vom normalen Login — auch mit aktiver Session ist ohne korrektes Token
    keine Passkey-Verwaltung möglich.
 
+## Sicherheit
+
+- **Sessions:** signiertes, HttpOnly-Cookie (`itsdangerous`). Gültigkeit steuerbar über
+  `SESSION_EXPIRY_HOURS` / `SESSION_REMEMBER_ME_DAYS`; `SESSION_COOKIE_SECURE=true` erzwingt
+  HTTPS-only (empfohlen hinter Reverse-Proxy mit SSL).
+- **PIN-Lockout:** nach `AUTH_PIN_MAX_ATTEMPTS` Fehlversuchen je IP für
+  `AUTH_PIN_LOCKOUT_SECONDS` Sekunden gesperrt; zusätzlich Rate-Limiting auf Login-Endpunkte.
+- **Passkey-Verwaltung:** zusätzlich zum Login durch ein `ADMIN_TOKEN` geschützt (10-Minuten-Grant),
+  unabhängig von der normalen Session.
+- **CSRF:** alle zustandsverändernden Requests werden per Origin-Check auf Same-Origin geprüft
+  (zusätzlich zum `SameSite=Lax`-Cookie).
+- **XSS:** alle Cloudflare-/Benutzereingaben (Security-Feed, Passkey-Namen) werden im Frontend
+  HTML-escaped.
+- **WebAuthn:** User-Verification wird konsistent erzwungen (`WEBAUTHN_USER_VERIFICATION=required`);
+  Challenges sind Einmal-Challenges. Ein Wechsel von `SESSION_SECRET_KEY` invalidiert alle Sessions
+  und ändert den abgeleiteten User-Handle für Passkeys.
+
 ## Konfiguration
 
 Alle Einstellungen laufen über die `.env` — siehe `.env.example` für die vollständige,
