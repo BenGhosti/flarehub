@@ -75,11 +75,21 @@ query GetFirewallEvents($zoneTag: string, $since: Time, $until: Time, $limit: In
 
 
 def _headers() -> dict:
-    """Header bei jedem Call neu bauen, damit ein zur Laufzeit geänderter Token sofort greift."""
-    return {
-        "Authorization": f"Bearer {settings.CLOUDFLARE_API_TOKEN}",
-        "Content-Type": "application/json",
-    }
+    """Header bei jedem Call neu bauen, damit ein zur Laufzeit geänderter Token sofort greift.
+    Der Authorization-Header wird nur gesetzt, wenn ein Token vorhanden ist – ein leerer
+    Bearer-Wert (f\"Bearer \" + '') führt bei httpx/httpcore sonst zu einem
+    LocalProtocolError und zu einem unbehandelten 500."""
+    headers = {"Content-Type": "application/json"}
+    if settings.CLOUDFLARE_API_TOKEN:
+        headers["Authorization"] = f"Bearer {settings.CLOUDFLARE_API_TOKEN}"
+    return headers
+
+
+def _zone_configured() -> tuple[bool, str]:
+    """Prüft, ob die Cloudflare-Zugangsdaten vollständig sind. Gibt (ok, error_message) zurück."""
+    if not settings.CLOUDFLARE_API_TOKEN or not settings.CLOUDFLARE_ZONE_ID:
+        return False, "Cloudflare nicht konfiguriert (CLOUDFLARE_API_TOKEN / CLOUDFLARE_ZONE_ID fehlen in .env)"
+    return True, ""
 
 
 def _log_run(db, success: bool, message: str, duration_ms: int, records: int = 0):
@@ -89,6 +99,10 @@ def _log_run(db, success: bool, message: str, duration_ms: int, records: int = 0
 
 async def _graphql_request(query: str, variables: dict) -> tuple[dict | None, str | None]:
     """Führt eine GraphQL-Anfrage aus. Gibt (data, error_message) zurück – genau eines ist None."""
+    ok, cfg_error = _zone_configured()
+    if not ok:
+        return None, cfg_error
+
     async with httpx.AsyncClient(timeout=settings.CLOUDFLARE_API_TIMEOUT) as client:
         try:
             resp = await client.post(
@@ -98,7 +112,7 @@ async def _graphql_request(query: str, variables: dict) -> tuple[dict | None, st
             )
         except httpx.TimeoutException:
             return None, "Zeitüberschreitung bei Cloudflare-Anfrage"
-        except httpx.RequestError as e:
+        except httpx.HTTPError as e:
             return None, f"Netzwerkfehler: {e}"
 
     if resp.status_code == 429:
@@ -130,11 +144,12 @@ async def fetch_analytics_and_store():
     """Wird periodisch (COLLECTOR_INTERVAL_MINUTES) vom Scheduler aufgerufen."""
     start_ts = time.monotonic()
 
-    if not settings.CLOUDFLARE_API_TOKEN or not settings.CLOUDFLARE_ZONE_ID:
+    ok, cfg_error = _zone_configured()
+    if not ok:
         logger.warning("Cloudflare-Zugangsdaten fehlen (CLOUDFLARE_API_TOKEN / CLOUDFLARE_ZONE_ID) – Collector übersprungen")
         db = SessionLocal()
         try:
-            _log_run(db, False, "Zugangsdaten fehlen (Token/Zone-ID)", 0)
+            _log_run(db, False, cfg_error, 0)
         finally:
             db.close()
         return
@@ -290,7 +305,7 @@ async def send_webhook_notification(message: str):
     async with httpx.AsyncClient(timeout=10) as client:
         try:
             await client.post(settings.NOTIFY_WEBHOOK_URL, json={"content": message})
-        except httpx.RequestError as e:
+        except httpx.HTTPError as e:
             logger.error(f"Webhook-Benachrichtigung fehlgeschlagen: {e}")
 
 
@@ -299,11 +314,17 @@ async def send_webhook_notification(message: str):
 # ---------------------------------------------------------------------------
 async def set_zone_setting(setting_name: str, value: str) -> tuple[bool, str]:
     """Setzt ein Zone-Setting, z.B. development_mode oder security_level."""
+    ok, cfg_error = _zone_configured()
+    if not ok:
+        return False, cfg_error
+
     url = f"{settings.CLOUDFLARE_API_BASE_URL}/zones/{settings.CLOUDFLARE_ZONE_ID}/settings/{setting_name}"
     async with httpx.AsyncClient(timeout=settings.CLOUDFLARE_API_TIMEOUT) as client:
         try:
             resp = await client.patch(url, headers=_headers(), json={"value": value})
-        except httpx.RequestError as e:
+        except httpx.TimeoutException:
+            return False, "Zeitüberschreitung bei Cloudflare-Anfrage"
+        except httpx.HTTPError as e:
             return False, f"Netzwerkfehler: {e}"
 
     if resp.status_code == 429:
@@ -323,6 +344,10 @@ async def set_zone_setting(setting_name: str, value: str) -> tuple[bool, str]:
 
 
 async def get_zone_setting(setting_name: str) -> str | None:
+    ok, _ = _zone_configured()
+    if not ok:
+        return None
+
     url = f"{settings.CLOUDFLARE_API_BASE_URL}/zones/{settings.CLOUDFLARE_ZONE_ID}/settings/{setting_name}"
     async with httpx.AsyncClient(timeout=settings.CLOUDFLARE_API_TIMEOUT) as client:
         try:
@@ -330,18 +355,27 @@ async def get_zone_setting(setting_name: str) -> str | None:
             resp.raise_for_status()
             data = resp.json()
             return data.get("result", {}).get("value")
-        except (httpx.RequestError, httpx.HTTPStatusError, ValueError) as e:
+        except httpx.HTTPError as e:
             logger.error(f"Konnte Zone-Setting {setting_name} nicht lesen: {e}")
+            return None
+        except ValueError as e:
+            logger.error(f"Konnte Zone-Setting {setting_name} nicht lesen (Ungültige Antwort): {e}")
             return None
 
 
 async def purge_cache(purge_everything: bool = True, files: list[str] = None) -> tuple[bool, str]:
+    ok, cfg_error = _zone_configured()
+    if not ok:
+        return False, cfg_error
+
     url = f"{settings.CLOUDFLARE_API_BASE_URL}/zones/{settings.CLOUDFLARE_ZONE_ID}/purge_cache"
     payload = {"purge_everything": True} if purge_everything else {"files": files or []}
     async with httpx.AsyncClient(timeout=settings.CLOUDFLARE_API_TIMEOUT) as client:
         try:
             resp = await client.post(url, headers=_headers(), json=payload)
-        except httpx.RequestError as e:
+        except httpx.TimeoutException:
+            return False, "Zeitüberschreitung bei Cloudflare-Anfrage"
+        except httpx.HTTPError as e:
             return False, f"Netzwerkfehler: {e}"
 
     if resp.status_code == 429:
