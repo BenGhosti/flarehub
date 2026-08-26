@@ -3,15 +3,23 @@
 Schlankes Cloudflare Analytics & Quick Actions Dashboard für Unraid/Docker.
 
 - FastAPI-Backend + Jinja2-Templates + Plain JS/CSS (keine SPA)
+- **Stateless Auth ohne Cookies:** PIN-/Passkey-Login stellt ein kurzlebiges Token aus
+  (nur im `sessionStorage` des Browsers) – jeder neue Besuch erfordert einen erneuten Login
 - PIN- und/oder Passkey/WebAuthn-Login (via `.env` steuerbar)
 - Admin-Token-geschützte Passkey-Verwaltung (hinzufügen/löschen) getrennt vom normalen Login
 - Analytics-Collector holt alle X Minuten GraphQL-Metriken von Cloudflare (`httpRequests1mGroups`)
 - Zeitraum-Auswahl (6h/24h/7T/30T/90T/1J) mit automatischer Auflösung
-- Charts: Requests, Bandbreite, Cache-Ratio, Threats (Chart.js)
+- Charts: Requests, Bandbreite, Cache-Ratio, Cached vs. Uncached, Unique Visitors,
+  Page Views, Threats (Chart.js, lokal ausgeliefert – kein CDN)
+- Pie-Charts: Cache-Aufteilung (Cached/Uncached) und Threat-Aktionen (block/challenge/...)
 - Security-Feed (WAF/Firewall-Events)
 - Quick Actions: Dev Mode, Purge Cache, Under Attack Mode
+- **Action Center** (`/actions`): Cache-Purge für bestimmte URLs, Collector manuell starten,
+  read-only Zone-Status-Übersicht
 - Mehrstufige Datenaggregation (Rohdaten → Stunden → Tage), damit die DB dauerhaft klein bleibt
 - Collector-Diagnose (letzter Lauf, Fehler, Speicherstatistik) auf der Einstellungsseite
+- Security-Hardening: Security-Header (CSP etc.), non-root Docker, PIN-Lockout, Rate-Limiting,
+  `pip-audit`-geprüfte Abhängigkeiten – siehe [SECURITY.md](SECURITY.md)
 
 ## Setup
 
@@ -139,18 +147,23 @@ flarehub/
 ├── Dockerfile
 ├── requirements.txt
 ├── .env.example
+├── SECURITY.md         # Security-Audit (Modell, Befunde, Restrisiken, Checkliste)
+├── test-webserver.bat  # Windows-Testserver mit Demo-Daten (PIN 1234)
 └── app/
     ├── main.py         # FastAPI-Routen
-    ├── auth.py         # PIN + WebAuthn/Passkey-Logik + Admin-Token-Gate
-    ├── collector.py     # Cloudflare GraphQL-Collector & Zone-Actions
-    ├── config.py        # .env-Settings
-    ├── database.py       # SQLAlchemy-Modelle + Rollup-/Aggregationslogik
+    ├── auth.py         # Stateless Token-Auth + PIN + WebAuthn + Admin-Token-Gate
+    ├── collector.py    # Cloudflare GraphQL-Collector & Zone-Actions
+    ├── config.py       # .env-Settings
+    ├── database.py     # SQLAlchemy-Modelle + Rollup-/Aggregationslogik
     ├── templates/
     │   ├── login.html
     │   ├── dashboard.html
+    │   ├── actions.html
     │   └── settings.html
     └── static/
         ├── styles.css
-        └── webauthn.js
+        ├── auth.js     # Stateless Auth-Helfer (sessionStorage + Bearer-Header)
+        ├── webauthn.js
+        └── vendor/chart.umd.min.js  # Chart.js lokal (offline-fähig)
 ```
 
