@@ -44,63 +44,43 @@ _pin_failures: dict = {}
 
 
 # ---------------------------------------------------------------------------
-# Session / Cookie
+# Stateless Access-Token (kein Session-Cookie!)
+#
+# Sicherheitsmodell: Nach PIN-/Passkey-Login erhält das Frontend ein kurzlebiges,
+# signiertes Token und legt es NUR im sessionStorage ab (pro Browser-Session).
+# Es gibt keine Cookies – bei jedem neuen Browser-Besuch ist der Token weg und
+# der Nutzer muss sich erneut per PIN oder Passkey anmelden.
 # ---------------------------------------------------------------------------
-def create_session_token(remember_me: bool = False) -> str:
-    return serializer.dumps({"authenticated": True, "ts": time.time(), "remember": remember_me})
+def create_access_token() -> str:
+    return serializer.dumps({"authenticated": True, "ts": time.time()})
 
 
-def verify_session_token(token: str) -> bool:
-    max_age_seconds = (
-        settings.SESSION_REMEMBER_ME_DAYS * 86400
-        if _token_has_remember(token)
-        else settings.SESSION_EXPIRY_HOURS * 3600
-    )
+def verify_access_token(token: str) -> bool:
     try:
-        data = serializer.loads(token, max_age=max_age_seconds)
+        data = serializer.loads(token, max_age=settings.SESSION_EXPIRY_HOURS * 3600)
         return bool(data.get("authenticated"))
     except (BadSignature, SignatureExpired):
         return False
 
 
-def _token_has_remember(token: str) -> bool:
-    try:
-        data = serializer.loads(token, max_age=settings.SESSION_REMEMBER_ME_DAYS * 86400)
-        return bool(data.get("remember"))
-    except Exception:
-        return False
+def extract_bearer_token(request: Request) -> str | None:
+    header = request.headers.get("authorization", "")
+    if header.startswith("Bearer "):
+        return header[7:].strip()
+    return None
 
 
 def get_current_session(request: Request) -> bool:
-    """Dependency: prüft ob Request authentifiziert ist. Bei AUTH_MODE=none immer True."""
+    """Dependency: prüft das Bearer-Token aus dem Authorization-Header.
+    Bei AUTH_MODE=none immer True."""
     if settings.auth_disabled:
         return True
-    token = request.cookies.get(settings.SESSION_COOKIE_NAME)
+    token = extract_bearer_token(request)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    if not verify_session_token(token):
+    if not verify_access_token(token):
         raise HTTPException(status_code=401, detail="Session expired or invalid")
     return True
-
-
-def set_session_cookie(response, remember_me: bool = False):
-    token = create_session_token(remember_me)
-    # max_age=None => Browser-Session-Cookie (kein Auth-Cache auf der Platte).
-    # Nur bei "Angemeldet bleiben" oder SESSION_COOKIE_PERSISTENT=true bekommt
-    # das Cookie ein Ablaufdatum.
-    max_age = None
-    if remember_me:
-        max_age = settings.SESSION_REMEMBER_ME_DAYS * 86400
-    elif settings.SESSION_COOKIE_PERSISTENT:
-        max_age = settings.SESSION_EXPIRY_HOURS * 3600
-    response.set_cookie(
-        key=settings.SESSION_COOKIE_NAME,
-        value=token,
-        max_age=max_age,
-        httponly=True,
-        secure=settings.SESSION_COOKIE_SECURE,
-        samesite=settings.SESSION_COOKIE_SAMESITE,
-    )
 
 
 # ---------------------------------------------------------------------------

@@ -117,12 +117,10 @@ async def on_shutdown():
 # ---------------------------------------------------------------------------
 class PinPayload(BaseModel):
     pin: str
-    remember_me: bool = False
 
 
 class PasskeyVerifyPayload(BaseModel):
     credential: dict
-    remember_me: bool = False
 
 
 class RegisterVerifyPayload(BaseModel):
@@ -140,9 +138,9 @@ async def auth_status(request: Request, db: Session = Depends(get_db)):
     if settings.auth_disabled:
         authenticated = True
     else:
-        token = request.cookies.get(settings.SESSION_COOKIE_NAME)
+        token = auth.extract_bearer_token(request)
         if token:
-            authenticated = auth.verify_session_token(token)
+            authenticated = auth.verify_access_token(token)
 
     has_passkeys = db.query(WebAuthnCredential).count() > 0
 
@@ -176,9 +174,9 @@ async def verify_pin_endpoint(payload: PinPayload, request: Request):
     if not ok:
         raise HTTPException(status_code=401, detail=message)
 
-    response = JSONResponse({"success": True})
-    auth.set_session_cookie(response, remember_me=payload.remember_me)
-    return response
+    # Kein Cookie: kurzes signiertes Token zurückgeben, Frontend legt es in den
+    # sessionStorage und sendet es als Bearer-Header mit.
+    return {"success": True, "token": auth.create_access_token()}
 
 
 @app.post("/api/passkey/auth-options")
@@ -203,16 +201,14 @@ async def passkey_auth_verify(payload: PasskeyVerifyPayload, request: Request, d
     if not ok:
         raise HTTPException(status_code=401, detail=message)
 
-    response = JSONResponse({"success": True})
-    auth.set_session_cookie(response, remember_me=payload.remember_me)
-    return response
+    return {"success": True, "token": auth.create_access_token()}
 
 
 def require_admin_grant(request: Request) -> bool:
-    """Dependency: verlangt zusätzlich zur normalen Session ein gültiges Admin-Token-Grant.
+    """Dependency: verlangt zusätzlich zum Login-Token ein gültiges Admin-Token-Grant.
     Schützt die Passkey-Verwaltung (Hinzufügen/Löschen) getrennt vom normalen Login."""
     auth.get_current_session(request)
-    grant = request.cookies.get("flarehub_admin_grant")
+    grant = request.headers.get("x-admin-grant", "")
     if not grant or not auth.verify_admin_token_grant(grant):
         raise HTTPException(status_code=403, detail="Admin-Token erforderlich")
     return True
@@ -220,7 +216,9 @@ def require_admin_grant(request: Request) -> bool:
 
 @app.post("/api/admin/verify")
 async def admin_verify(payload: AdminTokenPayload, request: Request):
-    """Prüft das Admin-Token aus der .env und stellt bei Erfolg ein kurzlebiges Grant-Cookie aus."""
+    """Prüft das Admin-Token aus der .env und stellt bei Erfolg ein kurzlebiges Grant aus.
+    Das Grant wird NICHT gecacht: es ist nur 10 Minuten gültig und lebt ausschliesslich
+    im sessionStorage des Browsers."""
     auth.get_current_session(request)
     client_ip = request.client.host if request.client else "unknown"
     if not _rate_limit_ok(client_ip):
@@ -228,26 +226,15 @@ async def admin_verify(payload: AdminTokenPayload, request: Request):
 
     ok, message = auth.verify_admin_token(payload.token, client_ip)
     if not ok:
-        raise HTTPException(status_code=401, detail=message)
+        raise HTTPException(status_code=403, detail=message)
 
-    response = JSONResponse({"success": True})
-    # Admin-Grant bewusst als Browser-Session-Cookie (kein max_age -> nichts wird
-    # auf der Platte gecacht). Die Gültigkeit ist ohnehin durch das signierte
-    # Token auf 10 Minuten begrenzt.
-    response.set_cookie(
-        key="flarehub_admin_grant",
-        value=auth.create_admin_token_grant(),
-        httponly=True,
-        secure=settings.SESSION_COOKIE_SECURE,
-        samesite=settings.SESSION_COOKIE_SAMESITE,
-    )
-    return response
+    return {"success": True, "grant": auth.create_admin_token_grant()}
 
 
 @app.get("/api/admin/status")
 async def admin_status(request: Request):
     auth.get_current_session(request)
-    grant = request.cookies.get("flarehub_admin_grant")
+    grant = request.headers.get("x-admin-grant", "")
     unlocked = bool(grant and auth.verify_admin_token_grant(grant))
     return {"admin_unlocked": unlocked}
 
@@ -290,10 +277,9 @@ async def passkey_delete(
 
 @app.post("/api/auth/logout")
 async def logout():
-    response = JSONResponse({"success": True})
-    response.delete_cookie(settings.SESSION_COOKIE_NAME)
-    response.delete_cookie("flarehub_admin_grant")
-    return response
+    """Stateless Logout: Es gibt serverseitig nichts zu löschen (kein Cookie, kein
+    Server-Session-Store). Das Frontend verwirft den Token aus dem sessionStorage."""
+    return {"success": True}
 
 
 # ---------------------------------------------------------------------------
@@ -314,30 +300,25 @@ async def login_page(request: Request):
 
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
-    if not settings.auth_disabled:
-        token = request.cookies.get(settings.SESSION_COOKIE_NAME)
-        if not token or not auth.verify_session_token(token):
-            return RedirectResponse(url="/login")
-
+    # Das Seiten-Skelett enthält keine sensiblen Daten (alle Daten kommen über die
+    # API mit Bearer-Token). Der Token-Check findet im Frontend statt:
+    # Ohne gültiges Token leitet die Seite sofort auf /login um.
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "app_name": settings.APP_NAME,
         "default_theme": settings.DEFAULT_THEME,
         "admin_token_configured": bool(settings.ADMIN_TOKEN),
+        "auth_required": not settings.auth_disabled,
     })
 
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
-    if not settings.auth_disabled:
-        token = request.cookies.get(settings.SESSION_COOKIE_NAME)
-        if not token or not auth.verify_session_token(token):
-            return RedirectResponse(url="/login")
-
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "app_name": settings.APP_NAME,
         "default_theme": settings.DEFAULT_THEME,
+        "auth_required": not settings.auth_disabled,
         "feature_requests_chart": settings.FEATURE_REQUESTS_CHART,
         "feature_bandwidth_chart": settings.FEATURE_BANDWIDTH_CHART,
         "feature_cache_ratio_chart": settings.FEATURE_CACHE_RATIO_CHART,

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>{{ app_name }} - Login</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <script src="/static/auth.js"></script>
     <script src="/static/webauthn.js"></script>
     <style>
         .login-container {
@@ -400,13 +401,15 @@
             inputs.forEach(input => { input.disabled = true; });
 
             try {
-                const response = await fetch('/api/auth/verify-pin', {
+                const response = await authFetch('/api/auth/verify-pin', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ pin })
                 });
 
                 if (response.ok) {
+                    const data = await response.json();
+                    setAuthToken(data.token);
                     inputs.forEach(input => {
                         input.classList.remove('filled');
                         input.classList.add('success');
@@ -503,7 +506,7 @@
 
             try {
                 // 1. Authentifizierungs-Optionen laden
-                const optionsResponse = await fetch('/api/passkey/auth-options', { method: 'POST' });
+                const optionsResponse = await authFetch('/api/passkey/auth-options', { method: 'POST' });
                 if (!optionsResponse.ok) {
                     let msg = 'Passkey-Optionen konnten nicht geladen werden';
                     try { msg = (await optionsResponse.json()).detail || msg; } catch (_) {}
@@ -517,13 +520,15 @@
                 });
 
                 // 3. Auf dem Server verifizieren
-                const verifyResponse = await fetch('/api/passkey/auth-verify', {
+                const verifyResponse = await authFetch('/api/passkey/auth-verify', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ credential: authToJSON(credential) })
                 });
 
                 if (verifyResponse.ok) {
+                    const data = await verifyResponse.json();
+                    setAuthToken(data.token);
                     succeeded = true;
                     spinner.style.display = 'none';
                     icon.style.display = '';
@@ -556,7 +561,7 @@
         };
 
         // Auth-Status prüfen und Login initialisieren
-        fetch('/api/auth/status')
+        authFetch('/api/auth/status')
             .then(response => {
                 if (response.status === 429) {
                     throw new Error('Zu viele Anfragen. Bitte kurz warten.');

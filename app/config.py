@@ -52,16 +52,11 @@ class Settings:
     WEBAUTHN_AUTHENTICATOR_ATTACHMENT: str = os.getenv("WEBAUTHN_AUTHENTICATOR_ATTACHMENT", "")
 
     SESSION_SECRET_KEY: str = os.getenv("SESSION_SECRET_KEY", "change-me-to-a-long-random-string")
-    SESSION_COOKIE_NAME: str = os.getenv("SESSION_COOKIE_NAME", "flarehub_session")
+    # Gültigkeit des Login-Tokens (Bearer) in Stunden. Da das Token nur im
+    # sessionStorage des Browsers liegt, muss man sich bei jedem neuen
+    # Browser-Besuch ohnehin neu anmelden - dies ist nur ein oberes Limit.
     SESSION_EXPIRY_HOURS: int = _int("SESSION_EXPIRY_HOURS", 12)
-    SESSION_COOKIE_SECURE: bool = _bool("SESSION_COOKIE_SECURE", False)
-    SESSION_COOKIE_SAMESITE: str = os.getenv("SESSION_COOKIE_SAMESITE", "lax")
-    SESSION_REMEMBER_ME_DAYS: int = _int("SESSION_REMEMBER_ME_DAYS", 30)
-    # false (Standard): Session-Cookie ohne Max-Age (Browser-Session, verfällt beim
-    # Schliessen des Browsers - kein Authentifizierungs-Cache). true: Cookie lebt
-    # SESSION_EXPIRY_HOURS lang auf der Platte.
-    SESSION_COOKIE_PERSISTENT: bool = _bool("SESSION_COOKIE_PERSISTENT", False)
-    # true (Standard): alle Seiten/API-Antworten (ausser /static) erhalten
+    # true (Standard): Seiten/API-Antworten (ausser /static) erhalten
     # Cache-Control: no-store, damit kein authentifizierter Inhalt im Browser gecacht wird.
     HTTP_CACHE_NO_STORE: bool = _bool("HTTP_CACHE_NO_STORE", True)
 
