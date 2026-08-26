@@ -20,7 +20,7 @@ from app.config import settings
 from app.database import (
     init_db, get_db, SessionLocal,
     AnalyticsSnapshot, AnalyticsHourly, AnalyticsDaily, ThreatEvent, LoginAttempt, CollectorRun,
-    get_storage_stats,
+    WebAuthnCredential, get_storage_stats,
 )
 from app import auth
 from app import collector
@@ -121,7 +121,7 @@ class AdminTokenPayload(BaseModel):
 
 
 @app.get("/api/auth/status")
-async def auth_status(request: Request):
+async def auth_status(request: Request, db: Session = Depends(get_db)):
     authenticated = False
     if settings.auth_disabled:
         authenticated = True
@@ -130,11 +130,15 @@ async def auth_status(request: Request):
         if token:
             authenticated = auth.verify_session_token(token)
 
+    has_passkeys = db.query(WebAuthnCredential).count() > 0
+
     return {
         "authenticated": authenticated,
+        "required": not settings.auth_disabled,
         "auth_mode": settings.AUTH_MODE,
         "pin_enabled": settings.auth_pin_enabled,
         "passkey_enabled": settings.auth_passkey_enabled,
+        "has_passkeys": has_passkeys,
         "pin_length": settings.AUTH_PIN_LENGTH,
         "app_name": settings.APP_NAME,
     }
