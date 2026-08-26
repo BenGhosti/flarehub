@@ -59,9 +59,13 @@ Schlankes Cloudflare Analytics & Quick Actions Dashboard für Unraid/Docker.
 
 ## Sicherheit
 
-- **Sessions:** signiertes, HttpOnly-Cookie (`itsdangerous`). Gültigkeit steuerbar über
-  `SESSION_EXPIRY_HOURS` / `SESSION_REMEMBER_ME_DAYS`; `SESSION_COOKIE_SECURE=true` erzwingt
-  HTTPS-only (empfohlen hinter Reverse-Proxy mit SSL).
+- **Sessions:** signiertes, HttpOnly-Cookie (`itsdangerous`). Standard ist ein reines
+  Browser-Session-Cookie ohne `Max-Age` (kein Auth-Cache auf der Platte); über
+  `SESSION_COOKIE_PERSISTENT=true` in der .env lässt sich eine längere Lebensdauer
+  (`SESSION_EXPIRY_HOURS`) aktivieren. `SESSION_COOKIE_SECURE=true` erzwingt HTTPS-only.
+- **Kein Browser-Caching:** Seiten & API-Antworten bekommen `Cache-Control: no-store`
+  (abschaltbar über `HTTP_CACHE_NO_STORE=false`); das Admin-Token-Grant ist ebenfalls
+  ein Session-Cookie.
 - **PIN-Lockout:** nach `AUTH_PIN_MAX_ATTEMPTS` Fehlversuchen je IP für
   `AUTH_PIN_LOCKOUT_SECONDS` Sekunden gesperrt; zusätzlich Rate-Limiting auf Login-Endpunkte.
 - **Passkey-Verwaltung:** zusätzlich zum Login durch ein `ADMIN_TOKEN` geschützt (10-Minuten-Grant),
