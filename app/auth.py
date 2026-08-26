@@ -2,13 +2,14 @@
 FlareHub – Authentifizierung: PIN + WebAuthn/Passkey.
 Verhalten wird komplett über AUTH_MODE in der .env gesteuert (pin | passkey | both | none).
 """
+import hashlib
 import hmac
 import json
 import time
 from datetime import datetime, timedelta
 
 import bcrypt
-from fastapi import Request, HTTPException, Depends
+from fastapi import Request, HTTPException
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from sqlalchemy.orm import Session
 from webauthn import (
@@ -18,6 +19,12 @@ from webauthn import (
     verify_authentication_response,
     options_to_json,
 )
+from webauthn.helpers.parse_authentication_credential_json import (
+    parse_authentication_credential_json,
+)
+from webauthn.helpers.parse_registration_credential_json import (
+    parse_registration_credential_json,
+)
 from webauthn.helpers.structs import (
     PublicKeyCredentialDescriptor,
     UserVerificationRequirement,
@@ -26,7 +33,7 @@ from webauthn.helpers.structs import (
 )
 
 from app.config import settings
-from app.database import get_db, WebAuthnCredential, LoginAttempt
+from app.database import WebAuthnCredential
 
 serializer = URLSafeTimedSerializer(settings.SESSION_SECRET_KEY, salt="flarehub-session")
 
@@ -225,6 +232,18 @@ def _user_verification():
     return mapping.get(settings.WEBAUTHN_USER_VERIFICATION.lower(), UserVerificationRequirement.PREFERRED)
 
 
+def _user_handle() -> bytes:
+    """Stabiler User-Handle für den einzelnen Admin-Account.
+
+    Wird deterministisch aus SESSION_SECRET_KEY abgeleitet, damit alle registrierten
+    Passkeys denselben UserHandle haben und keine zufällig wechselnde ID entsteht."""
+    return hashlib.sha256(settings.SESSION_SECRET_KEY.encode()).digest()[:32]
+
+
+def _require_user_verification() -> bool:
+    return settings.WEBAUTHN_USER_VERIFICATION.strip().lower() == "required"
+
+
 def build_registration_options(db: Session, username: str = "admin"):
     existing = db.query(WebAuthnCredential).all()
     exclude = [
@@ -240,6 +259,7 @@ def build_registration_options(db: Session, username: str = "admin"):
         rp_id=settings.WEBAUTHN_RP_ID,
         rp_name=settings.WEBAUTHN_RP_NAME,
         user_name=username,
+        user_id=_user_handle(),
         exclude_credentials=exclude,
         authenticator_selection=AuthenticatorSelectionCriteria(**selection_kwargs),
     )
@@ -270,32 +290,31 @@ def verify_passkey_authentication(db: Session, credential_json: dict) -> tuple[b
     if not challenge:
         return False, "Kein aktiver Login-Versuch gefunden. Bitte erneut starten."
 
-    cred_id_hex = None
     try:
-        from webauthn.helpers.structs import AuthenticationCredential
-        cred = AuthenticationCredential.parse_raw(json.dumps(credential_json))
+        cred = parse_authentication_credential_json(json.dumps(credential_json))
         cred_id_hex = cred.raw_id.hex()
 
         stored = db.query(WebAuthnCredential).filter_by(credential_id=cred_id_hex).first()
         if not stored:
             return False, "Unbekannter Passkey"
 
-        verify_authentication_response(
+        result = verify_authentication_response(
             credential=cred,
             expected_challenge=challenge,
             expected_origin=settings.WEBAUTHN_ORIGIN,
             expected_rp_id=settings.WEBAUTHN_RP_ID,
             credential_public_key=bytes.fromhex(stored.public_key),
             credential_current_sign_count=stored.sign_count,
-            require_user_verification=(settings.WEBAUTHN_USER_VERIFICATION == "required"),
+            require_user_verification=_require_user_verification(),
         )
 
-        stored.sign_count += 1
+        stored.sign_count = result.new_sign_count
         stored.last_used_at = datetime.utcnow()
         db.commit()
         _pending_challenges.pop("auth", None)
         return True, "OK"
     except Exception as e:
+        _pending_challenges.pop("auth", None)
         return False, f"Passkey-Verifizierung fehlgeschlagen: {str(e)}"
 
 
@@ -305,14 +324,14 @@ def store_new_credential(db: Session, credential_json: dict, nickname: str = Non
         return False, "Keine aktive Registrierung gefunden"
 
     try:
-        from webauthn.helpers.structs import RegistrationCredential
-        cred = RegistrationCredential.parse_raw(json.dumps(credential_json))
+        cred = parse_registration_credential_json(json.dumps(credential_json))
 
         result = verify_registration_response(
             credential=cred,
             expected_challenge=challenge,
             expected_origin=settings.WEBAUTHN_ORIGIN,
             expected_rp_id=settings.WEBAUTHN_RP_ID,
+            require_user_verification=_require_user_verification(),
         )
 
         entry = WebAuthnCredential(
@@ -327,6 +346,7 @@ def store_new_credential(db: Session, credential_json: dict, nickname: str = Non
         _pending_challenges.pop("register", None)
         return True, "OK"
     except Exception as e:
+        _pending_challenges.pop("register", None)
         return False, f"Registrierung fehlgeschlagen: {str(e)}"
 
 
