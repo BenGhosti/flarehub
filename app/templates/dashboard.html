@@ -75,7 +75,13 @@
         {% if feature_quick_actions %}
         <div class="card" style="text-align:left;">
             <h3 class="card-title">Quick Actions</h3>
-            <div class="actions-grid">
+            {% if not zone_configured %}
+            <p class="action-desc" style="margin-bottom:0.75rem; opacity:0.75;">
+                ⚠️ Cloudflare nicht konfiguriert – Quick Actions sind deaktiviert.
+                <code>CLOUDFLARE_API_TOKEN</code> / <code>CLOUDFLARE_ZONE_ID</code> in der .env setzen.
+            </p>
+            {% endif %}
+            <div class="actions-grid" {% if not zone_configured %}style="opacity:0.45; pointer-events:none;"{% endif %}>
                 {% if feature_dev_mode_toggle %}
                 <div class="action-item">
                     <div>
