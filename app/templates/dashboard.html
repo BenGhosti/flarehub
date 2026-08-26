@@ -45,6 +45,9 @@
                     <button type="button" class="btn-ghost">Action Center</button>
                 </a>
                 {% endif %}
+                <a href="/admin" style="text-decoration:none;">
+                    <button type="button" class="btn-ghost">Admin</button>
+                </a>
                 <a href="/settings" style="text-decoration:none;">
                     <button type="button" class="btn-ghost">Einstellungen</button>
                 </a>
@@ -226,6 +229,26 @@
                 <h3 class="card-title">Threat-Aktionen</h3>
                 <div class="chart-wrap"><canvas id="chart-threat-donut"></canvas></div>
                 <p class="chart-empty" id="chart-threat-donut-empty" style="display:none;">Noch keine Ereignisse für diesen Zeitraum</p>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% if feature_country_chart or feature_status_chart %}
+        <div class="chart-row">
+            {% if feature_country_chart %}
+            <div class="card chart-card chart-card-half" style="text-align:left;">
+                <h3 class="card-title">Top-Herkunftsländer (24h)</h3>
+                <div class="chart-wrap"><canvas id="chart-countries"></canvas></div>
+                <p class="chart-empty" id="chart-countries-empty" style="display:none;">Noch keine Daten (passiver Collector-Lauf nötig)</p>
+            </div>
+            {% endif %}
+
+            {% if feature_status_chart %}
+            <div class="card chart-card chart-card-half" style="text-align:left;">
+                <h3 class="card-title">HTTP-Statuscodes (24h)</h3>
+                <div class="chart-wrap"><canvas id="chart-status-codes"></canvas></div>
+                <p class="chart-empty" id="chart-status-codes-empty" style="display:none;">Noch keine Daten (passiver Collector-Lauf nötig)</p>
             </div>
             {% endif %}
         </div>
@@ -417,6 +440,7 @@
 
         let chartRequests, chartBandwidth, chartThreats, chartCacheRatio;
         let chartCachedUncached, chartVisitors, chartPageviews, chartCacheDonut, chartThreatDonut;
+        let chartCountries, chartStatusCodes;
         const chartColors = {
             primary: '#FF5E1F', secondary: '#999', good: '#4caf50', danger: '#f44336',
             info: '#2196F3', purple: '#9C27B0', warn: '#f0a020'
@@ -649,6 +673,71 @@
             }
         }
 
+        async function loadPassiveAnalytics() {
+            // Top-Herkunftsländer (passiv, letzte 24h)
+            const countryCanvas = document.getElementById('chart-countries');
+            if (countryCanvas) {
+                const res = await authFetch('/api/analytics/countries');
+                if (res.ok) {
+                    const data = await res.json();
+                    const hasData = data.available && data.countries.length > 0;
+                    toggleEmpty('chart-countries', !hasData);
+                    if (chartCountries) chartCountries.destroy();
+                    if (hasData) {
+                        const palette = ['#FF5E1F', '#2196F3', '#4caf50', '#9C27B0', '#f0a020',
+                            '#f44336', '#00bcd4', '#8bc34a', '#ff9800', '#e91e63', '#999'];
+                        chartCountries = new Chart(countryCanvas, {
+                            type: 'doughnut',
+                            data: {
+                                labels: data.countries.map(c => esc(c.country)),
+                                datasets: [{
+                                    data: data.countries.map(c => c.requests),
+                                    backgroundColor: palette.slice(0, data.countries.length),
+                                    borderWidth: 0
+                                }]
+                            },
+                            options: donutOptions()
+                        });
+                    }
+                }
+            }
+
+            // HTTP-Statuscode-Gruppen (passiv, letzte 24h)
+            const statusCanvas = document.getElementById('chart-status-codes');
+            if (statusCanvas) {
+                const res = await authFetch('/api/analytics/status-codes');
+                if (res.ok) {
+                    const data = await res.json();
+                    const hasData = data.available && data.groups.some(g => g.requests > 0);
+                    toggleEmpty('chart-status-codes', !hasData);
+                    if (chartStatusCodes) chartStatusCodes.destroy();
+                    if (hasData) {
+                        const groupColors = {
+                            '2xx': chartColors.good, '3xx': chartColors.info,
+                            '4xx': chartColors.warn, '5xx': chartColors.danger
+                        };
+                        chartStatusCodes = new Chart(statusCanvas, {
+                            type: 'bar',
+                            data: {
+                                labels: data.groups.map(g => esc(g.group)),
+                                datasets: [{
+                                    label: 'Requests',
+                                    data: data.groups.map(g => g.requests),
+                                    backgroundColor: data.groups.map(g => groupColors[g.group] || chartColors.secondary)
+                                }]
+                            },
+                            options: chartOptions({
+                                scales: {
+                                    y: { beginAtZero: true, ticks: { color: '#888', font: { size: 10 } }, grid: { color: 'rgba(128,128,128,0.15)' } },
+                                    x: { ticks: { color: '#888', font: { size: 11 } }, grid: { display: false } }
+                                }
+                            })
+                        });
+                    }
+                }
+            }
+        }
+
         document.querySelectorAll('.range-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
@@ -749,7 +838,7 @@
         });
 
         async function refreshAll() {
-            await Promise.all([loadSummary(), loadTimeseries(), loadDonuts(), loadSecurityFeed(), loadZoneStatus(), loadCollectorStatus()]);
+            await Promise.all([loadSummary(), loadTimeseries(), loadDonuts(), loadPassiveAnalytics(), loadSecurityFeed(), loadZoneStatus(), loadCollectorStatus()]);
         }
 
         refreshAll();
