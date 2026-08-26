@@ -4,6 +4,7 @@ FastAPI-Backend mit Jinja2-Templates, WebAuthn/PIN-Auth und Cloudflare GraphQL-A
 """
 import logging
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
@@ -28,14 +29,39 @@ from app import collector
 logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL, logging.INFO))
 logger = logging.getLogger("flarehub")
 
-app = FastAPI(title=settings.APP_NAME)
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-templates = Jinja2Templates(directory="app/templates")
-
 scheduler = AsyncIOScheduler()
 
 # Simple in-memory rate limiter für Login-Endpunkte
 _rate_limit_buckets: dict = {}
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    init_db()
+    if not settings.auth_disabled:
+        logger.info(f"Auth-Modus: {settings.AUTH_MODE}")
+    else:
+        logger.warning("AUTH_MODE=none – Dashboard ist UNGESCHÜTZT erreichbar!")
+
+    if settings.SESSION_SECRET_KEY == "change-me-to-a-long-random-string":
+        logger.warning("SESSION_SECRET_KEY ist noch der Default-Wert – bitte in der .env auf einen zufälligen String setzen!")
+
+    scheduler.add_job(
+        collector.fetch_analytics_and_store,
+        "interval",
+        minutes=settings.COLLECTOR_INTERVAL_MINUTES,
+        id="analytics_collector",
+        next_run_time=datetime.now() if settings.COLLECTOR_RUN_ON_STARTUP else None,
+    )
+    scheduler.start()
+    logger.info(f"{settings.APP_NAME} gestartet – Collector-Intervall: {settings.COLLECTOR_INTERVAL_MINUTES}min")
+    yield
+    scheduler.shutdown()
+
+
+app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+templates = Jinja2Templates(directory="app/templates")
 
 
 @app.middleware("http")
@@ -110,33 +136,6 @@ def _rate_limit_ok(ip: str) -> bool:
         return False
     window.append(now)
     return True
-
-
-@app.on_event("startup")
-async def on_startup():
-    init_db()
-    if not settings.auth_disabled:
-        logger.info(f"Auth-Modus: {settings.AUTH_MODE}")
-    else:
-        logger.warning("AUTH_MODE=none – Dashboard ist UNGESCHÜTZT erreichbar!")
-
-    if settings.SESSION_SECRET_KEY == "change-me-to-a-long-random-string":
-        logger.warning("SESSION_SECRET_KEY ist noch der Default-Wert – bitte in der .env auf einen zufälligen String setzen!")
-
-    scheduler.add_job(
-        collector.fetch_analytics_and_store,
-        "interval",
-        minutes=settings.COLLECTOR_INTERVAL_MINUTES,
-        id="analytics_collector",
-        next_run_time=datetime.now() if settings.COLLECTOR_RUN_ON_STARTUP else None,
-    )
-    scheduler.start()
-    logger.info(f"{settings.APP_NAME} gestartet – Collector-Intervall: {settings.COLLECTOR_INTERVAL_MINUTES}min")
-
-
-@app.on_event("shutdown")
-async def on_shutdown():
-    scheduler.shutdown()
 
 
 # ---------------------------------------------------------------------------
