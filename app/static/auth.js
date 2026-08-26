@@ -6,6 +6,7 @@
 
 const AUTH_TOKEN_KEY = 'flarehub_token';
 const ADMIN_GRANT_KEY = 'flarehub_admin_grant';
+const REVEAL_IPS_KEY = 'flarehub_reveal_ips';
 
 // Endpunkte, die auch bei gültiger Session legitime 401-Antworten liefern
 // (z.B. falsche PIN auf der Login-Seite) - dort NICHT automatisch weiterleiten.
@@ -32,13 +33,24 @@ function setAdminGrant(grant) {
     sessionStorage.setItem(ADMIN_GRANT_KEY, grant);
 }
 
+// Privacy: IP-Maskierung im Security-Feed nur mit aktivem Admin-Grant deaktivierbar
+function getRevealIps() {
+    return sessionStorage.getItem(REVEAL_IPS_KEY) === '1';
+}
+
+function setRevealIps(enabled) {
+    if (enabled) sessionStorage.setItem(REVEAL_IPS_KEY, '1');
+    else sessionStorage.removeItem(REVEAL_IPS_KEY);
+}
+
 function clearAuth() {
     sessionStorage.removeItem(AUTH_TOKEN_KEY);
     sessionStorage.removeItem(ADMIN_GRANT_KEY);
+    sessionStorage.removeItem(REVEAL_IPS_KEY);
 }
 
-// Fetch-Wrapper: haengt Authorization- und Admin-Grant-Header an und leitet bei
-// abgelaufenem Token automatisch zum Login weiter.
+// Fetch-Wrapper: haengt Authorization-, Admin-Grant- und Reveal-IPs-Header an und
+// leitet bei abgelaufenem Token automatisch zum Login weiter.
 async function authFetch(url, options = {}) {
     const opts = Object.assign({}, options);
     opts.headers = Object.assign({}, options.headers || {});
@@ -46,6 +58,7 @@ async function authFetch(url, options = {}) {
     if (token) opts.headers['Authorization'] = 'Bearer ' + token;
     const grant = getAdminGrant();
     if (grant) opts.headers['X-Admin-Grant'] = grant;
+    if (getRevealIps()) opts.headers['X-Reveal-IPs'] = '1';
 
     const res = await fetch(url, opts);
 
