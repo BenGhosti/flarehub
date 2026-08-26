@@ -12,10 +12,19 @@ Schlankes Cloudflare Analytics & Quick Actions Dashboard für Unraid/Docker.
 - Charts: Requests, Bandbreite, Cache-Ratio, Cached vs. Uncached, Unique Visitors,
   Page Views, Threats (Chart.js, lokal ausgeliefert – kein CDN)
 - Pie-Charts: Cache-Aufteilung (Cached/Uncached) und Threat-Aktionen (block/challenge/...)
+- **Passive Analytics** (rein lesend): Top-Herkunftsländer (Donut) und
+  HTTP-Statuscode-Gruppen (2xx–5xx) – keine schreibenden DNS-/WAF-Aktionen
+- **Privacy / IP-Masking:** Security-Feed-IPs standardmäßig maskiert
+  (`185.220.xxx.xxx`), auf der Admin-Seite temporär deaktivierbar
 - Security-Feed (WAF/Firewall-Events)
 - Quick Actions: Dev Mode, Purge Cache, Under Attack Mode
 - **Action Center** (`/actions`): Cache-Purge für bestimmte URLs, Collector manuell starten,
   read-only Zone-Status-Übersicht
+- **Admin-Seite** (`/admin`): Passkey-Verwaltung, SQLite-Wartung (VACUUM/ANALYZE),
+  scrubbed Log-Viewer, Privacy-Toggle – geschützt durch `ADMIN_TOKEN` (Grant nur
+  im sessionStorage, „Admin sperren"-Button)
+- **Webhook-Alerting** (optional): Discord/Telegram/Gotify bei Threat-Spikes und
+  5xx-Fehlern (passiv)
 - Mehrstufige Datenaggregation (Rohdaten → Stunden → Tage), damit die DB dauerhaft klein bleibt
 - Collector-Diagnose (letzter Lauf, Fehler, Speicherstatistik) auf der Einstellungsseite
 - Security-Hardening: Security-Header (CSP etc.), non-root Docker, PIN-Lockout, Rate-Limiting,
@@ -152,14 +161,15 @@ flarehub/
 └── app/
     ├── main.py         # FastAPI-Routen
     ├── auth.py         # Stateless Token-Auth + PIN + WebAuthn + Admin-Token-Gate
-    ├── collector.py    # Cloudflare GraphQL-Collector & Zone-Actions
+    ├── collector.py    # Cloudflare GraphQL-Collector & Zone-Actions + Passive Analytics
     ├── config.py       # .env-Settings
-    ├── database.py     # SQLAlchemy-Modelle + Rollup-/Aggregationslogik
+    ├── database.py     # SQLAlchemy-Modelle + Rollup-/Aggregationslogik + DB-Wartung
     ├── templates/
     │   ├── login.html
     │   ├── dashboard.html
     │   ├── actions.html
-    │   └── settings.html
+    │   ├── settings.html
+    │   └── admin.html
     └── static/
         ├── styles.css
         ├── auth.js     # Stateless Auth-Helfer (sessionStorage + Bearer-Header)

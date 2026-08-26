@@ -18,10 +18,23 @@ Restrisiken zusammen.
   erfordert einen erneuten PIN-/Passkey-Login. Es gibt keinen serverseitigen Session-Store,
   der kompromittiert oder gestohlen werden könnte.
 - Token-Lebensdauer: `SESSION_EXPIRY_HOURS` (Standard 4 h) als oberes Limit.
-- **Admin-Grant:** zusätzliche Hürde für die Passkey-Verwaltung. Ebenfalls kein Cookie –
-  lebt nur im `sessionStorage` und wird als `X-Admin-Grant`-Header gesendet. Signiert,
-  maximal 10 Minuten gültig. Der Admin-Token-Vergleich ist `hmac.compare_digest`
-  (timing-safe), mit IP-basiertem Lockout wie beim PIN.
+- **Admin-Grant:** zusätzliche Hürde für die Passkey-Verwaltung und alle Admin-APIs
+  (Log-Viewer, DB-Wartung, Privacy-Toggle). Ebenfalls kein Cookie – lebt nur im
+  `sessionStorage` und wird als `X-Admin-Grant`-Header gesendet. Signiert, maximal
+  10 Minuten gültig, sofort sperrbar über den „Admin sperren"-Button. Der
+  Admin-Token-Vergleich ist `hmac.compare_digest` (timing-safe), mit IP-basiertem
+  Lockout wie beim PIN.
+- **Privacy / IP-Masking:** Security-Feed-IPs werden standardmäßig maskiert
+  (`MASK_IPS_IN_FEED=true`, z.B. `185.220.xxx.xxx` / `2a01:4f8:xxx::`). Die
+  Maskierung kann nur mit gültigem Admin-Grant temporär deaktiviert werden
+  (Server-seitig geprüft über `X-Reveal-IPs` + Grant) – das Frontend allein
+  kann die Roh-IPs nicht freischalten.
+- **Log-Viewer:** Collector-Logs sind read-only und werden serverseitig gescrubbt –
+  Secrets/Tokens/URLs erscheinen ausschließlich als `***`, bevor sie die API verlassen.
+- **Passive Analytics:** Länder- und Statuscode-Aggregation laufen ausschließlich über
+  den lesenden GraphQL-Endpunkt `httpRequestsAdaptiveGroups`. FlareHub löst keine
+  schreibenden DNS-/WAF-Aktionen aus (auch die Quick Actions sind explizit
+  Feature-geschützt und konfigurierbar).
 - **PIN:** nur als bcrypt-Hash gespeichert (`AUTH_PIN_HASH`), Vergleich über `bcrypt.checkpw`.
   Lockout nach `AUTH_PIN_MAX_ATTEMPTS` Fehlversuchen für `AUTH_PIN_LOCKOUT_SECONDS`
   (IP-basiert, in-memory). Standard-PIN-Länge: 6 Stellen (für kritische Infrastruktur
