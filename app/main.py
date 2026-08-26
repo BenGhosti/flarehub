@@ -59,6 +59,20 @@ async def csrf_origin_check(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def no_store_cache(request: Request, call_next):
+    """Verhindert Browser-Caching von authentifiziertem Inhalt (Seiten + APIs).
+
+    /static-Assets duerfen gecacht werden, alles andere bekommt Cache-Control: no-store.
+    Abschaltbar ueber HTTP_CACHE_NO_STORE=false in der .env."""
+    response = await call_next(request)
+    if settings.HTTP_CACHE_NO_STORE and not request.url.path.startswith("/static"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 def _rate_limit_ok(ip: str) -> bool:
     if not settings.RATE_LIMIT_ENABLED:
         return True
@@ -217,10 +231,12 @@ async def admin_verify(payload: AdminTokenPayload, request: Request):
         raise HTTPException(status_code=401, detail=message)
 
     response = JSONResponse({"success": True})
+    # Admin-Grant bewusst als Browser-Session-Cookie (kein max_age -> nichts wird
+    # auf der Platte gecacht). Die Gültigkeit ist ohnehin durch das signierte
+    # Token auf 10 Minuten begrenzt.
     response.set_cookie(
         key="flarehub_admin_grant",
         value=auth.create_admin_token_grant(),
-        max_age=600,  # 10 Minuten gültig
         httponly=True,
         secure=settings.SESSION_COOKIE_SECURE,
         samesite=settings.SESSION_COOKIE_SAMESITE,

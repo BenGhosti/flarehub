@@ -85,11 +85,14 @@ def get_current_session(request: Request) -> bool:
 
 def set_session_cookie(response, remember_me: bool = False):
     token = create_session_token(remember_me)
-    max_age = (
-        settings.SESSION_REMEMBER_ME_DAYS * 86400
-        if remember_me
-        else settings.SESSION_EXPIRY_HOURS * 3600
-    )
+    # max_age=None => Browser-Session-Cookie (kein Auth-Cache auf der Platte).
+    # Nur bei "Angemeldet bleiben" oder SESSION_COOKIE_PERSISTENT=true bekommt
+    # das Cookie ein Ablaufdatum.
+    max_age = None
+    if remember_me:
+        max_age = settings.SESSION_REMEMBER_ME_DAYS * 86400
+    elif settings.SESSION_COOKIE_PERSISTENT:
+        max_age = settings.SESSION_EXPIRY_HOURS * 3600
     response.set_cookie(
         key=settings.SESSION_COOKIE_NAME,
         value=token,

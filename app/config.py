@@ -57,6 +57,13 @@ class Settings:
     SESSION_COOKIE_SECURE: bool = _bool("SESSION_COOKIE_SECURE", False)
     SESSION_COOKIE_SAMESITE: str = os.getenv("SESSION_COOKIE_SAMESITE", "lax")
     SESSION_REMEMBER_ME_DAYS: int = _int("SESSION_REMEMBER_ME_DAYS", 30)
+    # false (Standard): Session-Cookie ohne Max-Age (Browser-Session, verfällt beim
+    # Schliessen des Browsers - kein Authentifizierungs-Cache). true: Cookie lebt
+    # SESSION_EXPIRY_HOURS lang auf der Platte.
+    SESSION_COOKIE_PERSISTENT: bool = _bool("SESSION_COOKIE_PERSISTENT", False)
+    # true (Standard): alle Seiten/API-Antworten (ausser /static) erhalten
+    # Cache-Control: no-store, damit kein authentifizierter Inhalt im Browser gecacht wird.
+    HTTP_CACHE_NO_STORE: bool = _bool("HTTP_CACHE_NO_STORE", True)
 
     # --- Cloudflare ---
     CLOUDFLARE_API_TOKEN: str = os.getenv("CLOUDFLARE_API_TOKEN", "")
