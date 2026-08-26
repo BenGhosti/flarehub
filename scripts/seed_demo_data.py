@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.database import (  # noqa: E402
     init_db, SessionLocal,
     AnalyticsSnapshot, AnalyticsHourly, AnalyticsDaily, ThreatEvent,
+    CountryStat, StatusCodeStat,
 )
 
 random.seed(42)
@@ -80,6 +81,8 @@ def main():
         db.query(AnalyticsHourly).delete()
         db.query(AnalyticsDaily).delete()
         db.query(ThreatEvent).delete()
+        db.query(CountryStat).delete()
+        db.query(StatusCodeStat).delete()
         db.commit()
 
         now = datetime.utcnow().replace(second=0, microsecond=0)
@@ -160,16 +163,41 @@ def main():
             ))
         db.commit()
 
+        # --- Passive Analytics: Länder + Statuscodes (letzte 24h Snapshot) ---
+        country_weights = {
+            "DE": 42, "US": 18, "NL": 9, "FR": 7, "GB": 6, "CN": 5,
+            "RU": 4, "BR": 3, "IN": 3, "UA": 2, "JP": 1,
+        }
+        total_weight = sum(country_weights.values())
+        total_reqs = 1_100_000
+        for country, weight in country_weights.items():
+            db.add(CountryStat(
+                period_start=now,
+                country=country,
+                requests=int(total_reqs * weight / total_weight),
+            ))
+        status_dist = {"2xx": 0.74, "3xx": 0.12, "4xx": 0.10, "5xx": 0.04}
+        for group, share in status_dist.items():
+            db.add(StatusCodeStat(
+                period_start=now,
+                status_group=group,
+                requests=int(total_reqs * share),
+            ))
+        db.commit()
+
         counts = (
             db.query(AnalyticsSnapshot).count(),
             db.query(AnalyticsHourly).count(),
             db.query(AnalyticsDaily).count(),
             db.query(ThreatEvent).count(),
+            db.query(CountryStat).count(),
+            db.query(StatusCodeStat).count(),
         )
         print(
             f"Demo-Daten erzeugt in {DB_PATH}\n"
             f"  Snapshots: {counts[0]} | Stunden-Rollups: {counts[1]} | "
-            f"Tages-Rollups: {counts[2]} | Security-Events: {counts[3]}"
+            f"Tages-Rollups: {counts[2]} | Security-Events: {counts[3]} | "
+            f"Länder: {counts[4]} | Statuscodes: {counts[5]}"
         )
     finally:
         db.close()
