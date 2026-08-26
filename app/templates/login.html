@@ -6,57 +6,311 @@
     <title>{{ app_name }} - Login</title>
     <link rel="stylesheet" href="/static/styles.css">
     <script src="/static/webauthn.js"></script>
+    <style>
+        .login-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 1rem;
+        }
+
+        .theme-toggle {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+        }
+
+        .login-brand {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.4rem;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+
+        .login-brand .brand-logo {
+            width: 52px;
+            height: 52px;
+            color: var(--primary-color);
+            margin-bottom: 0.4rem;
+        }
+
+        .login-brand h1 {
+            margin: 0;
+            padding: 0;
+            font-size: 2rem;
+        }
+
+        .login-brand h2 {
+            font-weight: 500;
+            opacity: 0.85;
+            font-size: 1.15rem;
+        }
+
+        #pin-form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+            justify-content: center;
+            max-width: 100%;
+            padding: 1rem;
+        }
+
+        .error-message {
+            text-align: center;
+            margin-top: 1rem;
+            color: var(--danger-color);
+            max-width: 320px;
+            line-height: 1.45;
+            min-height: 1.4em;
+        }
+        .error-message.success {
+            color: #4CAF50;
+        }
+
+        .pin-digit.locked {
+            opacity: 0.5;
+            cursor: not-allowed;
+            border-color: var(--danger-color);
+            background-color: var(--textarea-bg);
+        }
+
+        .divider {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin: 1.5rem 0;
+            color: var(--text-color);
+            opacity: 0.5;
+            font-size: 0.9rem;
+            width: 100%;
+            max-width: 300px;
+        }
+        .divider::before,
+        .divider::after {
+            content: '';
+            flex: 1;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .passkey-wrap {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.75rem;
+            width: 100%;
+            max-width: 340px;
+        }
+
+        .passkey-btn {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 13px 28px;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.15s ease, background 0.2s ease, box-shadow 0.2s ease;
+            animation: key-glow 2.4s ease-in-out infinite;
+        }
+        .passkey-btn:hover:not(:disabled) {
+            background: var(--highlight-hover);
+            transform: translateY(-2px);
+            animation: none;
+            box-shadow: 0 6px 18px rgba(255, 94, 31, 0.35);
+        }
+        .passkey-btn:active:not(:disabled) {
+            transform: translateY(0) scale(0.97);
+        }
+        .passkey-btn:disabled {
+            background: var(--border-color);
+            cursor: not-allowed;
+            animation: none;
+        }
+        .passkey-btn #passkey-icon {
+            transition: transform 0.2s ease;
+        }
+        .passkey-btn:hover:not(:disabled) #passkey-icon {
+            transform: rotate(-10deg) scale(1.08);
+        }
+
+        .passkey-note {
+            font-size: 0.8rem;
+            opacity: 0.75;
+            text-align: center;
+            line-height: 1.4;
+            max-width: 300px;
+        }
+        .passkey-note.warning {
+            color: var(--danger-color);
+            opacity: 1;
+            background: rgba(244, 67, 54, 0.1);
+            border: 1px solid rgba(244, 67, 54, 0.35);
+            border-radius: 8px;
+            padding: 0.6rem 0.9rem;
+        }
+
+        /* --- Animations --- */
+
+        @keyframes fade-in-up {
+            from { opacity: 0; transform: translateY(14px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .login-brand, #pin-section, #passkey-section {
+            animation: fade-in-up 0.45s ease-out both;
+        }
+        #pin-section { animation-delay: 0.08s; }
+        #passkey-section { animation-delay: 0.16s; }
+
+        @keyframes pin-pop {
+            0% { transform: scale(0.7); }
+            55% { transform: scale(1.18); }
+            80% { transform: scale(0.95); }
+            100% { transform: scale(1); }
+        }
+        .pin-digit.filled {
+            animation: pin-pop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        @keyframes pin-success {
+            0% { transform: scale(1); }
+            40% { transform: scale(1.25); background-color: #4CAF50; border-color: #4CAF50; box-shadow: 0 0 0 4px rgba(76, 175, 80, 0.25); }
+            100% { transform: scale(1); background-color: #4CAF50; border-color: #4CAF50; }
+        }
+        .pin-digit.success {
+            animation: pin-success 0.4s ease-out forwards;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            15%, 55% { transform: translateX(-8px); }
+            35%, 75% { transform: translateX(8px); }
+        }
+        .shake {
+            animation: shake 0.45s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+        }
+
+        @keyframes key-glow {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(255, 94, 31, 0.45); }
+            50% { box-shadow: 0 0 0 10px rgba(255, 94, 31, 0); }
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .passkey-spinner {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+            border: 2px solid rgba(255, 255, 255, 0.35);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+
+        .passkey-btn.success {
+            background: #4CAF50 !important;
+            animation: success-glow 0.8s ease-out;
+        }
+        @keyframes success-glow {
+            0% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.55); }
+            70% { box-shadow: 0 0 0 14px rgba(76, 175, 80, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); }
+        }
+        #passkey-icon.success-icon {
+            animation: check-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        @keyframes check-pop {
+            0% { transform: scale(0); }
+            60% { transform: scale(1.35); }
+            100% { transform: scale(1); }
+        }
+
+        @media (max-width: 480px) {
+            .login-container {
+                padding: 1rem 0.75rem calc(1rem + env(safe-area-inset-bottom));
+            }
+            .login-brand {
+                margin-bottom: 1.25rem;
+            }
+            .login-brand .brand-logo {
+                width: 44px;
+                height: 44px;
+            }
+            .login-brand h1 {
+                font-size: 1.6rem;
+            }
+            .login-brand h2 {
+                font-size: 1rem;
+            }
+            #pin-form {
+                gap: 0.5rem;
+            }
+            .passkey-wrap {
+                width: 100%;
+                max-width: 100%;
+            }
+            .passkey-btn {
+                width: 100%;
+                justify-content: center;
+                min-height: 48px;
+                padding: 12px 16px;
+            }
+        }
+    </style>
 </head>
 <body>
-    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Theme wechseln">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="5"></circle>
-            <line x1="12" y1="1" x2="12" y2="3"></line>
-            <line x1="12" y1="21" x2="12" y2="23"></line>
-            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-            <line x1="1" y1="12" x2="3" y2="12"></line>
-            <line x1="21" y1="12" x2="23" y2="12"></line>
-            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-        </svg>
-    </button>
+    <div class="login-container">
+        <button class="theme-toggle" onclick="toggleTheme()" aria-label="Theme wechseln">
+            <svg xmlns="http://www.w3.org/2000/svg" class="theme-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path class="moon" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                <circle class="sun" cx="12" cy="12" r="5" style="display:none"/>
+                <line class="sun" x1="12" y1="1" x2="12" y2="3" style="display:none"/>
+                <line class="sun" x1="12" y1="21" x2="12" y2="23" style="display:none"/>
+                <line class="sun" x1="4.22" y1="4.22" x2="5.64" y2="5.64" style="display:none"/>
+                <line class="sun" x1="18.36" y1="18.36" x2="19.78" y2="19.78" style="display:none"/>
+                <line class="sun" x1="1" y1="12" x2="3" y2="12" style="display:none"/>
+                <line class="sun" x1="21" y1="12" x2="23" y2="12" style="display:none"/>
+                <line class="sun" x1="4.22" y1="19.78" x2="5.64" y2="18.36" style="display:none"/>
+                <line class="sun" x1="18.36" y1="5.64" x2="19.78" y2="4.22" style="display:none"/>
+            </svg>
+        </button>
 
-    <div class="container">
         <div class="login-brand">
-            <svg class="brand-logo" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom: 1rem;">
+            <svg class="brand-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
             </svg>
             <h1>{{ app_name }}</h1>
-            <h2 id="login-subtitle" style="font-weight:400; opacity:0.8; margin-bottom: 1rem;">Anmelden</h2>
+            <h2 id="login-subtitle">Anmelden</h2>
         </div>
 
         <div id="pin-section" style="display: none;">
-            <form id="pin-form" autocomplete="off">
-                <div class="pin-container" id="pin-container"></div>
-                <button type="submit" id="pin-submit">Anmelden</button>
-                <div style="margin-top: 1rem;">
-                    <label style="font-size: 0.875rem; display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer;">
-                        <input type="checkbox" id="remember-me">
-                        Angemeldet bleiben
-                    </label>
-                </div>
+            <form id="pin-form">
+                <!-- PIN-Eingabefelder werden dynamisch erzeugt -->
             </form>
         </div>
 
         <div id="passkey-section" style="display: none;">
-            <div class="divider" style="margin: 1.5rem 0; opacity: 0.6;">oder</div>
+            <div class="divider">oder</div>
             <div class="passkey-wrap">
                 <button id="passkey-btn" class="passkey-btn" type="button">
-                    <svg id="passkey-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 8px;">
+                    <svg id="passkey-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                         <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                        <circle cx="12" cy="16" r="1.5" fill="currentColor"></circle>
+                        <circle cx="12" cy="16" r="1.5" fill="currentColor" stroke="none"></circle>
                     </svg>
                     <span class="passkey-spinner" id="passkey-spinner" style="display:none"></span>
-                    <span id="passkey-label">Mit Passkey / YubiKey anmelden</span>
+                    <span id="passkey-label">Mit Passkey anmelden</span>
                 </button>
-                <p id="passkey-note" class="passkey-note" style="display:none; font-size: 0.8rem; opacity: 0.7; margin-top: 0.5rem;"></p>
+                <p id="passkey-note" class="passkey-note" style="display:none"></p>
             </div>
         </div>
 
@@ -64,132 +318,300 @@
     </div>
 
     <script>
-        const AUTH_MODE = "{{ auth_mode }}";
-        const PIN_LENGTH = {{ pin_length }};
+        // --- Theme (localStorage + Server-Default) ---
+        const savedTheme = localStorage.getItem('theme') || '{{ default_theme }}';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        applyThemeIcon(savedTheme);
 
-        // --- Theme Toggle ---
-        const themeToggle = document.getElementById('theme-toggle');
-        const htmlEl = document.documentElement;
-        themeToggle.addEventListener('click', () => {
-            const current = htmlEl.getAttribute('data-theme');
-            htmlEl.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
-        });
-
-        // --- Section visibility based on AUTH_MODE ---
-        const pinSection = document.getElementById('pin-section');
-        const passkeySection = document.getElementById('passkey-section');
-        const errorEl = document.getElementById('pin-error');
-
-        if (AUTH_MODE === 'pin' || AUTH_MODE === 'both') {
-            pinSection.style.display = 'block';
-            buildPinInputs();
-        }
-        if (AUTH_MODE === 'passkey' || AUTH_MODE === 'both') {
-            passkeySection.style.display = 'block';
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme');
+            const next = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            localStorage.setItem('theme', next);
+            applyThemeIcon(next);
         }
 
-        function buildPinInputs() {
-            const container = document.getElementById('pin-container');
-            container.innerHTML = '';
-            for (let i = 0; i < PIN_LENGTH; i++) {
+        function applyThemeIcon(theme) {
+            document.querySelectorAll('.moon').forEach(p => p.style.display = theme === 'dark' ? 'none' : '');
+            document.querySelectorAll('.sun').forEach(p => p.style.display = theme === 'dark' ? '' : 'none');
+        }
+
+        // Passkeys erfordern einen sicheren Kontext (HTTPS oder localhost)
+        const canUseWebAuthn = window.isSecureContext === true &&
+            typeof navigator.credentials === 'object' &&
+            typeof navigator.credentials.get === 'function' &&
+            typeof navigator.credentials.create === 'function';
+
+        const setError = (text, isSuccess = false) => {
+            const el = document.getElementById('pin-error');
+            el.textContent = text || '';
+            el.className = 'error-message' + (isSuccess ? ' success' : '');
+        };
+
+        // PIN-Eingabefelder erzeugen
+        const createPinInputs = (length) => {
+            const form = document.getElementById('pin-form');
+            form.innerHTML = '';
+            for (let i = 0; i < length; i++) {
                 const input = document.createElement('input');
                 input.type = 'password';
-                input.inputMode = 'numeric';
-                input.maxLength = 1;
                 input.className = 'pin-digit';
-                input.dataset.index = i;
-                container.appendChild(input);
+                input.maxLength = 1;
+                input.pattern = '[0-9]';
+                input.inputMode = 'numeric';
+                input.autocomplete = 'off';
+                input.required = true;
+                form.appendChild(input);
             }
-            const digits = container.querySelectorAll('.pin-digit');
-            digits.forEach((digit, idx) => {
-                digit.addEventListener('input', (e) => {
-                    if (e.target.value) {
-                        e.target.classList.add('filled');
-                        if (idx < digits.length - 1) digits[idx + 1].focus();
+        };
+
+        const handlePinInput = (e, index) => {
+            const input = e.target;
+            const form = document.getElementById('pin-form');
+            const inputs = [...form.querySelectorAll('.pin-digit')];
+            const value = input.value;
+
+            if (!/^\d*$/.test(value)) {
+                input.value = '';
+                return;
+            }
+
+            if (value) {
+                input.classList.add('filled');
+                if (index < inputs.length - 1) {
+                    inputs[index + 1].focus();
+                } else {
+                    const pin = inputs.map(input => input.value).join('');
+                    if (pin.length === inputs.length) {
+                        verifyPin(pin);
+                    }
+                }
+            } else {
+                input.classList.remove('filled');
+            }
+        };
+
+        const verifyPin = async (pin) => {
+            const inputs = [...document.querySelectorAll('.pin-digit')];
+            if (pin.length !== inputs.length) return;
+
+            setError('');
+            inputs.forEach(input => { input.disabled = true; });
+
+            try {
+                const response = await fetch('/api/auth/verify-pin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pin })
+                });
+
+                if (response.ok) {
+                    inputs.forEach(input => {
+                        input.classList.remove('filled');
+                        input.classList.add('success');
+                    });
+                    setError('Anmeldung erfolgreich', true);
+                    setTimeout(() => { window.location.href = '/'; }, 350);
+                } else {
+                    let errorText = 'Authentifizierung fehlgeschlagen';
+                    try { errorText = (await response.json()).detail || errorText; } catch (_) {}
+                    setError(errorText);
+
+                    const isLockedOut = errorText.includes('Zu viele Fehlversuche');
+                    if (isLockedOut) {
+                        inputs.forEach(input => {
+                            input.disabled = true;
+                            input.classList.add('locked');
+                        });
                     } else {
-                        e.target.classList.remove('filled');
+                        const form = document.getElementById('pin-form');
+                        form.classList.remove('shake');
+                        void form.offsetWidth; // Reflow, um Animation neu zu starten
+                        form.classList.add('shake');
+
+                        inputs.forEach(input => {
+                            input.disabled = false;
+                            input.value = '';
+                            input.classList.remove('filled');
+                        });
+                        inputs[0].focus();
+                    }
+                }
+            } catch (err) {
+                setError('Fehler bei der Authentifizierung');
+                inputs.forEach(input => { input.disabled = false; });
+            }
+        };
+
+        const setupPinHandling = () => {
+            const form = document.getElementById('pin-form');
+            const inputs = [...form.querySelectorAll('.pin-digit')];
+
+            inputs.forEach((input, index) => {
+                input.addEventListener('input', (e) => handlePinInput(e, index));
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Backspace' && !input.value && index > 0) {
+                        inputs[index - 1].focus();
+                        inputs[index - 1].value = '';
+                        inputs[index - 1].classList.remove('filled');
                     }
                 });
-                digit.addEventListener('keydown', (e) => {
-                    if (e.key === 'Backspace' && !e.target.value && idx > 0) {
-                        digits[idx - 1].focus();
+                input.addEventListener('paste', (e) => {
+                    e.preventDefault();
+                    const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, inputs.length);
+                    if (pastedData.length > 0) {
+                        pastedData.split('').forEach((digit, i) => {
+                            if (i < inputs.length) {
+                                inputs[i].value = digit;
+                                inputs[i].classList.add('filled');
+                            }
+                        });
+                        if (pastedData.length === inputs.length) {
+                            verifyPin(pastedData);
+                        } else if (pastedData.length < inputs.length) {
+                            inputs[pastedData.length].focus();
+                        }
                     }
                 });
             });
-            if (digits.length) digits[0].focus();
-        }
 
-        document.getElementById('pin-form')?.addEventListener('submit', async (e) => {
-            e.preventDefault();
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const pin = inputs.map(input => input.value).join('');
+                if (pin.length === inputs.length) {
+                    verifyPin(pin);
+                }
+            });
+
+            inputs[0].focus();
+        };
+
+        // Passkey-Login
+        const loginWithPasskey = async () => {
+            const errorEl = document.getElementById('pin-error');
+            const btn = document.getElementById('passkey-btn');
+            const spinner = document.getElementById('passkey-spinner');
+            const icon = document.getElementById('passkey-icon');
+            const label = document.getElementById('passkey-label');
+            let succeeded = false;
+            btn.disabled = true;
             errorEl.textContent = '';
-            const digits = [...document.querySelectorAll('.pin-digit')].map(i => i.value).join('');
-            if (digits.length !== PIN_LENGTH) {
-                errorEl.textContent = 'Bitte vollständige PIN eingeben';
-                return;
-            }
-            const rememberMe = document.getElementById('remember-me').checked;
+            spinner.style.display = 'inline-block';
+            icon.style.display = 'none';
+            label.textContent = 'Prüfe...';
+
             try {
-                const res = await fetch('/api/auth/verify-pin', {
+                // 1. Authentifizierungs-Optionen laden
+                const optionsResponse = await fetch('/api/passkey/auth-options', { method: 'POST' });
+                if (!optionsResponse.ok) {
+                    let msg = 'Passkey-Optionen konnten nicht geladen werden';
+                    try { msg = (await optionsResponse.json()).detail || msg; } catch (_) {}
+                    throw new Error(msg);
+                }
+                const options = await optionsResponse.json();
+
+                // 2. Credential vom Authenticator anfordern
+                const credential = await navigator.credentials.get({
+                    publicKey: toAuthOptions(options)
+                });
+
+                // 3. Auf dem Server verifizieren
+                const verifyResponse = await fetch('/api/passkey/auth-verify', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pin: digits, remember_me: rememberMe })
+                    body: JSON.stringify({ credential: authToJSON(credential) })
                 });
-                if (!res.ok) {
-                    const err = await res.json();
-                    throw new Error(err.detail || 'Login fehlgeschlagen');
+
+                if (verifyResponse.ok) {
+                    succeeded = true;
+                    spinner.style.display = 'none';
+                    icon.style.display = '';
+                    icon.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
+                    icon.classList.add('success-icon');
+                    btn.classList.add('success');
+                    label.textContent = 'Erfolgreich!';
+                    setTimeout(() => { window.location.href = '/'; }, 900);
+                } else {
+                    let msg = 'Passkey-Authentifizierung fehlgeschlagen';
+                    try { msg = (await verifyResponse.json()).detail || msg; } catch (_) {}
+                    errorEl.textContent = msg;
                 }
-                window.location.href = '/';
             } catch (err) {
-                errorEl.textContent = err.message;
-                buildPinInputs();
-            }
-        });
-
-        // --- Passkey Login ---
-        const passkeyBtn = document.getElementById('passkey-btn');
-        const passkeySpinner = document.getElementById('passkey-spinner');
-        const passkeyLabel = document.getElementById('passkey-label');
-        const passkeyNote = document.getElementById('passkey-note');
-
-        if (!window.PublicKeyCredential && passkeySection.style.display !== 'none') {
-            passkeyNote.textContent = 'WebAuthn wird von diesem Browser nicht unterstützt.';
-            passkeyNote.style.display = 'block';
-            passkeyBtn.disabled = true;
-        }
-
-        passkeyBtn?.addEventListener('click', async () => {
-            errorEl.textContent = '';
-            passkeyBtn.disabled = true;
-            passkeySpinner.style.display = 'inline-block';
-            passkeyLabel.textContent = 'Warte auf Passkey...';
-            try {
-                const optionsRes = await fetch('/api/passkey/auth-options', { method: 'POST' });
-                if (!optionsRes.ok) throw new Error('Konnte Passkey-Optionen nicht laden');
-                const options = await optionsRes.json();
-
-                const publicKey = toAuthOptions(options);
-                const assertion = await navigator.credentials.get({ publicKey });
-                const assertionJSON = authToJSON(assertion);
-
-                const rememberMe = document.getElementById('remember-me')?.checked || false;
-                const verifyRes = await fetch('/api/passkey/auth-verify', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ credential: assertionJSON, remember_me: rememberMe })
-                });
-                if (!verifyRes.ok) {
-                    const err = await verifyRes.json();
-                    throw new Error(err.detail || 'Passkey-Login fehlgeschlagen');
+                if (err.name === 'NotAllowedError') {
+                    errorEl.textContent = 'Passkey-Anmeldung abgebrochen';
+                } else if (err.name === 'SecurityError') {
+                    errorEl.textContent = 'Passkey-Fehler: Browser erlauben Passkeys nur über HTTPS oder localhost.';
+                } else {
+                    errorEl.textContent = 'Passkey-Anmeldung fehlgeschlagen: ' + (err.message || err);
                 }
-                window.location.href = '/';
-            } catch (err) {
-                errorEl.textContent = err.message || 'Passkey-Login abgebrochen';
             } finally {
-                passkeyBtn.disabled = false;
-                passkeySpinner.style.display = 'none';
-                passkeyLabel.textContent = 'Mit Passkey / YubiKey anmelden';
+                btn.disabled = false;
+                if (!succeeded) {
+                    spinner.style.display = 'none';
+                    icon.style.display = '';
+                    label.textContent = 'Mit Passkey anmelden';
+                }
             }
-        });
+        };
+
+        // Auth-Status prüfen und Login initialisieren
+        fetch('/api/auth/status')
+            .then(response => {
+                if (response.status === 429) {
+                    throw new Error('Zu viele Anfragen. Bitte kurz warten.');
+                }
+                return response.json();
+            })
+            .then(data => {
+                // Bereits angemeldet oder keine Auth erforderlich -> Dashboard
+                if (data.authenticated || !data.required) {
+                    window.location.href = '/';
+                    return;
+                }
+
+                const authMode = data.auth_mode;
+                const showPin = (authMode === 'pin' || authMode === 'both') && data.pin_enabled;
+                const showPasskey = (authMode === 'passkey' || authMode === 'both') && data.passkey_enabled;
+
+                if (showPin) {
+                    document.getElementById('pin-section').style.display = 'block';
+                    document.getElementById('login-subtitle').textContent = 'PIN eingeben';
+                    createPinInputs(data.pin_length || 4);
+                    setupPinHandling();
+                }
+
+                if (showPasskey) {
+                    const section = document.getElementById('passkey-section');
+                    const btn = document.getElementById('passkey-btn');
+                    const note = document.getElementById('passkey-note');
+                    section.style.display = 'block';
+
+                    if (!data.has_passkeys) {
+                        btn.style.display = 'none';
+                        note.style.display = 'block';
+                        note.textContent = 'Noch keine Passkeys registriert. Zuerst einen anlegen oder per PIN anmelden.';
+                    } else if (!canUseWebAuthn) {
+                        btn.disabled = true;
+                        note.style.display = 'block';
+                        note.className = 'passkey-note warning';
+                        note.textContent = 'Passkeys erfordern HTTPS oder localhost. Diese Verbindung ist nicht sicher, daher ist Passkey-Login hier nicht verfügbar.';
+                    } else {
+                        btn.addEventListener('click', loginWithPasskey);
+                    }
+
+                    if (!showPin) {
+                        document.querySelector('.divider').style.display = 'none';
+                        document.getElementById('login-subtitle').textContent = 'Mit Passkey anmelden';
+                    }
+                }
+
+                if (!showPin && !showPasskey) {
+                    document.getElementById('pin-error').textContent = 'Keine Authentifizierungsmethode verfügbar.';
+                }
+            })
+            .catch(err => {
+                document.getElementById('pin-error').textContent = err.message || 'Fehler beim Prüfen des Authentifizierungsstatus';
+            });
     </script>
 </body>
 </html>
