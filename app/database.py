@@ -138,6 +138,26 @@ class CollectorRun(Base):
     records_fetched = Column(Integer, default=0)
 
 
+class CountryStat(Base):
+    """Passive Analytics: Requests je Herkunftsland für ein Sammelintervall (letzte 24h)."""
+    __tablename__ = "country_stats"
+
+    id = Column(Integer, primary_key=True, index=True)
+    period_start = Column(DateTime, index=True)  # Beginn des Sammelintervalls
+    country = Column(String, index=True)
+    requests = Column(Integer, default=0)
+
+
+class StatusCodeStat(Base):
+    """Passive Analytics: Requests je Statuscode-Gruppe (2xx/3xx/4xx/5xx) je Intervall."""
+    __tablename__ = "status_code_stats"
+
+    id = Column(Integer, primary_key=True, index=True)
+    period_start = Column(DateTime, index=True)
+    status_group = Column(String, index=True)  # "2xx", "3xx", "4xx", "5xx"
+    requests = Column(Integer, default=0)
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 
@@ -274,6 +294,10 @@ def cleanup_old_data(db):
     threat_cutoff = datetime.utcnow() - timedelta(days=settings.THREAT_EVENT_RETENTION_DAYS)
     db.query(ThreatEvent).filter(ThreatEvent.timestamp < threat_cutoff).delete()
 
+    passive_cutoff = datetime.utcnow() - timedelta(days=settings.PASSIVE_RETENTION_DAYS)
+    db.query(CountryStat).filter(CountryStat.period_start < passive_cutoff).delete()
+    db.query(StatusCodeStat).filter(StatusCodeStat.period_start < passive_cutoff).delete()
+
     login_cutoff = datetime.utcnow() - timedelta(days=7)
     db.query(LoginAttempt).filter(LoginAttempt.timestamp < login_cutoff).delete()
 
@@ -283,11 +307,39 @@ def cleanup_old_data(db):
     db.commit()
 
 
+def db_maintenance() -> dict:
+    """Führt SQLite-Wartung aus (VACUUM + ANALYZE) und gibt die Ergebnisse zurück.
+    VACUUM kompaktiert die Datei, ANALYZE aktualisiert die Query-Statistiken."""
+    import time as _time
+
+    results = {}
+    start = _time.monotonic()
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("VACUUM")
+        results["vacuum"] = "OK"
+    except Exception as e:
+        results["vacuum"] = f"Fehler: {e}"
+
+    try:
+        with engine.connect() as conn:
+            conn.exec_driver_sql("ANALYZE")
+        results["analyze"] = "OK"
+    except Exception as e:
+        results["analyze"] = f"Fehler: {e}"
+
+    results["duration_ms"] = int((_time.monotonic() - start) * 1000)
+    return results
+
+
 def get_storage_stats(db) -> dict:
-    """Zeilenzahlen je Tabelle für die Anzeige im UI (Settings-Seite)."""
+    """Zeilenzahlen je Tabelle für die Anzeige im UI (Settings-/Admin-Seite)."""
     return {
         "raw_snapshots": db.query(func.count(AnalyticsSnapshot.id)).scalar() or 0,
         "hourly_rollups": db.query(func.count(AnalyticsHourly.id)).scalar() or 0,
         "daily_rollups": db.query(func.count(AnalyticsDaily.id)).scalar() or 0,
         "threat_events": db.query(func.count(ThreatEvent.id)).scalar() or 0,
+        "country_stats": db.query(func.count(CountryStat.id)).scalar() or 0,
+        "status_code_stats": db.query(func.count(StatusCodeStat.id)).scalar() or 0,
+        "collector_runs": db.query(func.count(CollectorRun.id)).scalar() or 0,
     }

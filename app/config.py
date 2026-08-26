@@ -103,6 +103,11 @@ class Settings:
     FEATURE_VISITORS_CHART: bool = _bool("FEATURE_VISITORS_CHART", True)            # Unique Visitors
     FEATURE_PAGEVIEWS_CHART: bool = _bool("FEATURE_PAGEVIEWS_CHART", True)          # Page Views
     FEATURE_CACHED_UNCACHED_CHART: bool = _bool("FEATURE_CACHED_UNCACHED_CHART", True)  # Stacked Cached/Uncached
+    # Passive Analytics (read-only GraphQL httpRequestsAdaptiveGroups)
+    FEATURE_COUNTRY_CHART: bool = _bool("FEATURE_COUNTRY_CHART", True)              # Donut: Top-Herkunftsländer
+    FEATURE_STATUS_CHART: bool = _bool("FEATURE_STATUS_CHART", True)                # Chart: Statuscode-Gruppen (2xx-5xx)
+    # Aufbewahrung der passiven Analytics-Snapshots (Country/StatusCode) in Tagen
+    PASSIVE_RETENTION_DAYS: int = _int("PASSIVE_RETENTION_DAYS", 30)
     FEATURE_ACTION_CENTER: bool = _bool("FEATURE_ACTION_CENTER", True)
     FEATURE_QUICK_ACTIONS: bool = _bool("FEATURE_QUICK_ACTIONS", True)
     FEATURE_DEV_MODE_TOGGLE: bool = _bool("FEATURE_DEV_MODE_TOGGLE", True)
@@ -110,15 +115,36 @@ class Settings:
     FEATURE_UNDER_ATTACK_TOGGLE: bool = _bool("FEATURE_UNDER_ATTACK_TOGGLE", True)
     DASHBOARD_AUTO_REFRESH_SECONDS: int = _int("DASHBOARD_AUTO_REFRESH_SECONDS", 60)
 
-    # --- Notifications ---
-    NOTIFY_WEBHOOK_URL: str = os.getenv("NOTIFY_WEBHOOK_URL", "")
-    NOTIFY_ON_UNDER_ATTACK_TOGGLE: bool = _bool("NOTIFY_ON_UNDER_ATTACK_TOGGLE", True)
-    NOTIFY_ON_CACHE_PURGE: bool = _bool("NOTIFY_ON_CACHE_PURGE", True)
-    NOTIFY_THREAT_THRESHOLD: int = _int("NOTIFY_THREAT_THRESHOLD", 100)
+    # --- Privacy / Masking ---
+    # true (Standard): IPs im Security-Feed werden maskiert (185.220.xxx.xxx).
+    # Auf der Admin-Seite kann die Maskierung temporär (nur Browser-Session)
+    # deaktiviert werden - das erfordert einen aktiven Admin-Grant.
+    MASK_IPS_IN_FEED: bool = _bool("MASK_IPS_IN_FEED", True)
+
+    # --- Webhook-Alerting (passiv, optional) ---
+    # WEBHOOK_ENABLED=true aktiviert Benachrichtigungen bei Threat-Spikes und 5xx-Fehlern.
+    # WEBHOOK_TYPE: discord | telegram | gotify
+    WEBHOOK_ENABLED: bool = _bool("WEBHOOK_ENABLED", False)
+    # Rückwärtskompatibilität: falls WEBHOOK_URL leer, wird NOTIFY_WEBHOOK_URL übernommen
+    WEBHOOK_URL: str = os.getenv("WEBHOOK_URL", os.getenv("NOTIFY_WEBHOOK_URL", ""))
+    WEBHOOK_TYPE: str = os.getenv("WEBHOOK_TYPE", "discord").lower()
+    WEBHOOK_ON_THREAT_SPIKE: bool = _bool("WEBHOOK_ON_THREAT_SPIKE", True)
+    WEBHOOK_ON_5XX: bool = _bool("WEBHOOK_ON_5XX", True)
+    # Schwellenwerte (Fallback auf die alten NOTIFY_*-Variablen)
+    WEBHOOK_THREAT_THRESHOLD: int = _int("WEBHOOK_THREAT_THRESHOLD", _int("NOTIFY_THREAT_THRESHOLD", 100))
+    WEBHOOK_5XX_THRESHOLD: int = _int("WEBHOOK_5XX_THRESHOLD", 50)
+    # Telegram: Chat-ID, falls sie nicht in der URL steht (Alternative: ?chat_id=... in WEBHOOK_URL)
+    WEBHOOK_TELEGRAM_CHAT_ID: str = os.getenv("WEBHOOK_TELEGRAM_CHAT_ID", "")
+    # Gotify: App-Token (X-Gotify-Key) - alternativ kann es in der URL stehen
+    WEBHOOK_GOTIFY_TOKEN: str = os.getenv("WEBHOOK_GOTIFY_TOKEN", "")
 
     # --- Rate Limiting ---
     RATE_LIMIT_ENABLED: bool = _bool("RATE_LIMIT_ENABLED", True)
     RATE_LIMIT_LOGIN_ATTEMPTS_PER_MINUTE: int = _int("RATE_LIMIT_LOGIN_ATTEMPTS_PER_MINUTE", 10)
+
+    @property
+    def webhook_active(self) -> bool:
+        return self.WEBHOOK_ENABLED and bool(self.WEBHOOK_URL)
 
     @property
     def auth_pin_enabled(self) -> bool:

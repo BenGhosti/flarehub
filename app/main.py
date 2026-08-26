@@ -21,7 +21,7 @@ from app.config import settings
 from app.database import (
     init_db, get_db, SessionLocal,
     AnalyticsSnapshot, AnalyticsHourly, AnalyticsDaily, ThreatEvent, LoginAttempt, CollectorRun,
-    WebAuthnCredential, get_storage_stats,
+    WebAuthnCredential, CountryStat, StatusCodeStat, get_storage_stats, db_maintenance,
 )
 from app import auth
 from app import collector
@@ -262,7 +262,48 @@ async def admin_status(request: Request):
     auth.get_current_session(request)
     grant = request.headers.get("x-admin-grant", "")
     unlocked = bool(grant and auth.verify_admin_token_grant(grant))
-    return {"admin_unlocked": unlocked}
+    reveal = request.headers.get("x-reveal-ips", "") == "1"
+    return {
+        "admin_unlocked": unlocked,
+        # Maskierung aktiv, solange sie nicht über das Admin-Grant temporär deaktiviert wurde
+        "mask_ips": bool(settings.MASK_IPS_IN_FEED) and not (unlocked and reveal),
+        "mask_ips_configured": bool(settings.MASK_IPS_IN_FEED),
+        "webhook_enabled": settings.WEBHOOK_ENABLED,
+        "webhook_type": settings.WEBHOOK_TYPE if settings.WEBHOOK_ENABLED else None,
+    }
+
+
+@app.get("/api/admin/logs")
+async def admin_logs(
+    _admin: bool = Depends(require_admin_grant),
+    db: Session = Depends(get_db),
+    limit: int = 50,
+):
+    """Read-only Log-Viewer: letzte Collector-Läufe. Secrets/Tokens werden zwingend
+    als *** maskiert, bevor die Meldungen die API verlassen."""
+    limit = max(1, min(limit, 200))
+    rows = (
+        db.query(CollectorRun)
+        .order_by(desc(CollectorRun.timestamp))
+        .limit(limit)
+        .all()
+    )
+    return [
+        {
+            "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+            "success": r.success,
+            "message": collector.scrub_log_message(r.message),
+            "duration_ms": r.duration_ms,
+            "records_fetched": r.records_fetched,
+        }
+        for r in rows
+    ]
+
+
+@app.post("/api/admin/db-maintenance")
+async def admin_db_maintenance(_admin: bool = Depends(require_admin_grant)):
+    """Manuelle SQLite-Wartung: VACUUM (kompaktiert) + ANALYZE (Statistiken)."""
+    return db_maintenance()
 
 
 @app.post("/api/passkey/register-options")
@@ -349,6 +390,18 @@ async def actions_page(request: Request):
     })
 
 
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_page(request: Request):
+    """Dedizierte Admin-Ansicht: Passkey-Verwaltung, DB-Tools, Log-Viewer, Privacy.
+    Alle Admin-APIs verlangen das ADMIN_TOKEN (Grant im sessionStorage)."""
+    return templates.TemplateResponse(request, "admin.html", {
+        "app_name": settings.APP_NAME,
+        "default_theme": settings.DEFAULT_THEME,
+        "auth_required": not settings.auth_disabled,
+        "admin_token_configured": bool(settings.ADMIN_TOKEN),
+    })
+
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
     return templates.TemplateResponse(request, "dashboard.html", {
@@ -365,6 +418,8 @@ async def dashboard_page(request: Request):
         "feature_visitors_chart": settings.FEATURE_VISITORS_CHART,
         "feature_pageviews_chart": settings.FEATURE_PAGEVIEWS_CHART,
         "feature_cached_uncached_chart": settings.FEATURE_CACHED_UNCACHED_CHART,
+        "feature_country_chart": settings.FEATURE_COUNTRY_CHART,
+        "feature_status_chart": settings.FEATURE_STATUS_CHART,
         "feature_action_center": settings.FEATURE_ACTION_CENTER,
         "feature_quick_actions": settings.FEATURE_QUICK_ACTIONS,
         "feature_dev_mode_toggle": settings.FEATURE_DEV_MODE_TOGGLE,
@@ -543,6 +598,64 @@ async def analytics_donuts(
     }
 
 
+@app.get("/api/analytics/countries")
+async def analytics_countries(
+    _auth: bool = Depends(auth.get_current_session),
+    db: Session = Depends(get_db),
+):
+    """Top-Herkunftsländer aus dem neuesten passiven Analytics-Snapshot (letzte 24h).
+    Liefert die Top 10 plus einen 'Andere'-Sammelposten für den Donut-Chart."""
+    latest = db.query(CountryStat).order_by(desc(CountryStat.period_start)).first()
+    if not latest:
+        return {"available": False, "countries": [], "period_start": None}
+
+    rows = (
+        db.query(CountryStat)
+        .filter(CountryStat.period_start == latest.period_start)
+        .order_by(desc(CountryStat.requests))
+        .all()
+    )
+    countries = []
+    other = 0
+    for r in rows:
+        if len(countries) < 10:
+            countries.append({"country": r.country, "requests": r.requests})
+        else:
+            other += r.requests
+    if other > 0:
+        countries.append({"country": "Andere", "requests": other})
+
+    return {
+        "available": True,
+        "countries": countries,
+        "period_start": latest.period_start.isoformat(),
+    }
+
+
+@app.get("/api/analytics/status-codes")
+async def analytics_status_codes(
+    _auth: bool = Depends(auth.get_current_session),
+    db: Session = Depends(get_db),
+):
+    """HTTP-Statuscode-Gruppen (2xx/3xx/4xx/5xx) aus dem neuesten passiven Snapshot."""
+    latest = db.query(StatusCodeStat).order_by(desc(StatusCodeStat.period_start)).first()
+    if not latest:
+        return {"available": False, "groups": []}
+
+    rows = (
+        db.query(StatusCodeStat)
+        .filter(StatusCodeStat.period_start == latest.period_start)
+        .order_by(desc(StatusCodeStat.requests))
+        .all()
+    )
+    order = ["2xx", "3xx", "4xx", "5xx"]
+    by_group = {r.status_group: r.requests for r in rows}
+    return {
+        "available": True,
+        "groups": [{"group": g, "requests": by_group.get(g, 0)} for g in order],
+    }
+
+
 @app.get("/api/analytics/summary")
 async def analytics_summary(
     _auth: bool = Depends(auth.get_current_session),
@@ -596,20 +709,29 @@ async def collector_status(
 
 
 @app.get("/api/security/feed")
-async def security_feed(
-    _auth: bool = Depends(auth.get_current_session),
-    db: Session = Depends(get_db),
-):
+async def security_feed(request: Request, _auth: bool = Depends(auth.get_current_session), db: Session = Depends(get_db)):
     rows = (
         db.query(ThreatEvent)
         .order_by(desc(ThreatEvent.timestamp))
         .limit(settings.SECURITY_FEED_LIMIT)
         .all()
     )
+
+    # Privacy: IPs werden maskiert, sofern MASK_IPS_IN_FEED aktiv ist. Die Maskierung
+    # kann auf der Admin-Seite temporär (nur für die aktive Browser-Session) deaktiviert
+    # werden - das erfordert einen gültigen Admin-Grant.
+    grant = request.headers.get("x-admin-grant", "")
+    reveal_ips = (
+        request.headers.get("x-reveal-ips", "") == "1"
+        and grant
+        and auth.verify_admin_token_grant(grant)
+    )
+    mask_ips = settings.MASK_IPS_IN_FEED and not reveal_ips
+
     return [
         {
             "timestamp": r.timestamp.isoformat(),
-            "client_ip": r.client_ip,
+            "client_ip": collector.mask_ip(r.client_ip) if mask_ips else r.client_ip,
             "country": r.country,
             "action": r.action,
             "source": r.source,
@@ -710,8 +832,11 @@ async def zone_settings_summary(_auth: bool = Depends(auth.get_current_session))
 
 @app.post("/api/collector/run-now")
 async def collector_run_now(_auth: bool = Depends(auth.get_current_session)):
-    """Löst manuell einen Collector-Lauf aus, z.B. zum Testen der Cloudflare-Zugangsdaten."""
+    """Löst manuell einen Collector-Lauf aus (inkl. passiver Analytics), z.B. zum
+    Testen der Cloudflare-Zugangsdaten. Rein lesend, keine schreibenden Aktionen."""
     await collector.fetch_analytics_and_store()
+    if settings.FEATURE_COUNTRY_CHART or settings.FEATURE_STATUS_CHART:
+        await collector.fetch_passive_analytics_and_store()
     return {"success": True}
 
 

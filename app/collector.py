@@ -17,13 +17,17 @@ Beachtete Cloudflare-Plattform-Limits (Stand: developers.cloudflare.com/analytic
 """
 import asyncio
 import logging
+import re
 import time
 from datetime import datetime, timedelta, timezone
 
 import httpx
 
 from app.config import settings
-from app.database import SessionLocal, AnalyticsSnapshot, ThreatEvent, CollectorRun, cleanup_old_data
+from app.database import (
+    SessionLocal, AnalyticsSnapshot, ThreatEvent, CollectorRun,
+    CountryStat, StatusCodeStat, cleanup_old_data,
+)
 
 logger = logging.getLogger("flarehub.collector")
 
@@ -68,6 +72,29 @@ query GetFirewallEvents($zoneTag: string, $since: Time, $until: Time, $limit: In
         source
         clientRequestPath
         userAgent
+      }
+    }
+  }
+}
+"""
+
+# Passive Analytics (read-only): letzte 24h, aggregiert nach Herkunftsland und
+# HTTP-Status. Nutzt httpRequestsAdaptiveGroups - ein reiner Lese-Endpunkt,
+# es werden keinerlei schreibende Aktionen ausgelöst.
+PASSIVE_ANALYTICS_QUERY = """
+query GetPassiveAnalytics($zoneTag: string, $since: Time, $until: Time, $limit: Int) {
+  viewer {
+    zones(filter: { zoneTag: $zoneTag }) {
+      httpRequestsAdaptiveGroups(
+        limit: $limit
+        filter: { datetime_geq: $since, datetime_leq: $until }
+        orderBy: [count_DESC]
+      ) {
+        count
+        dimensions {
+          clientCountryName
+          edgeResponseStatus
+        }
       }
     }
   }
@@ -225,7 +252,12 @@ async def fetch_analytics_and_store():
             records_stored = len(groups)
             logger.info(f"Analytics-Snapshot gespeichert: {totals['requests_total']} Requests ({records_stored} Rohdatenpunkte)")
 
-            if settings.NOTIFY_WEBHOOK_URL and totals["threats_total"] >= settings.NOTIFY_THREAT_THRESHOLD:
+            # Passives Alerting: Threat-Spike im letzten Intervall
+            if (
+                settings.WEBHOOK_ENABLED
+                and settings.WEBHOOK_ON_THREAT_SPIKE
+                and totals["threats_total"] >= settings.WEBHOOK_THREAT_THRESHOLD
+            ):
                 await send_webhook_notification(
                     f"⚠️ Threat-Spike erkannt: {totals['threats_total']} geblockte Requests im letzten Intervall"
                 )
@@ -237,13 +269,24 @@ async def fetch_analytics_and_store():
     if settings.FEATURE_SECURITY_FEED:
         firewall_records, firewall_error = await fetch_firewall_events()
 
+    # Passive Analytics (Länder & Statuscodes) - read-only, Fehler sind nicht kritisch
+    passive_records = 0
+    passive_error = None
+    if settings.FEATURE_COUNTRY_CHART or settings.FEATURE_STATUS_CHART:
+        passive_records, passive_error = await fetch_passive_analytics_and_store()
+
     db = SessionLocal()
     try:
         cleanup_old_data(db)
+        notes = []
         if firewall_error:
-            _log_run(db, True, f"OK (Firewall-Events übersprungen: {firewall_error})", duration_ms, records_stored)
+            notes.append(f"Firewall-Events übersprungen: {firewall_error}")
+        if passive_error:
+            notes.append(f"Passive Analytics übersprungen: {passive_error}")
+        if notes:
+            _log_run(db, True, "OK (" + "; ".join(notes) + ")", duration_ms, records_stored + firewall_records + passive_records)
         else:
-            _log_run(db, True, "OK", duration_ms, records_stored + firewall_records)
+            _log_run(db, True, "OK", duration_ms, records_stored + firewall_records + passive_records)
     finally:
         db.close()
 
@@ -301,15 +344,171 @@ async def fetch_firewall_events() -> tuple[int, str | None]:
 
 
 async def send_webhook_notification(message: str):
-    if not settings.NOTIFY_WEBHOOK_URL:
+    """Sendet eine Benachrichtigung über den konfigurierten Webhook (passiv, optional).
+
+    WEBHOOK_TYPE: discord (content), telegram (text+chat_id), gotify (message+X-Gotify-Key).
+    Fehler werden nur mit Fehlertyp geloggt - die Exception-Nachricht enthält die
+    Webhook-URL inkl. Token/Secret und darf niemals in Logs landen."""
+    if not settings.webhook_active:
         return
+    webhook_type = settings.WEBHOOK_TYPE
+    url = settings.WEBHOOK_URL
+
+    payload: dict = {"content": message}
+    headers: dict = {"Content-Type": "application/json"}
+
+    if webhook_type == "telegram":
+        chat_id = settings.WEBHOOK_TELEGRAM_CHAT_ID
+        if not chat_id:
+            from urllib.parse import parse_qs, urlparse
+
+            query = parse_qs(urlparse(url).query)
+            chat_id = (query.get("chat_id") or [""])[0]
+        if not chat_id:
+            logger.warning("Telegram-Webhook ohne chat_id - WEBHOOK_TELEGRAM_CHAT_ID setzen")
+            return
+        payload = {"chat_id": chat_id, "text": message, "disable_web_page_preview": True}
+    elif webhook_type == "gotify":
+        payload = {"title": "FlareHub", "message": message, "priority": 5}
+        if settings.WEBHOOK_GOTIFY_TOKEN:
+            headers["X-Gotify-Key"] = settings.WEBHOOK_GOTIFY_TOKEN
+
     async with httpx.AsyncClient(timeout=10) as client:
         try:
-            await client.post(settings.NOTIFY_WEBHOOK_URL, json={"content": message})
+            await client.post(url, json=payload, headers=headers)
         except httpx.HTTPError as e:
-            # Nur Fehlertyp loggen - die Exception-Nachricht enthält die
-            # Webhook-URL inkl. Token/Secret, das niemals in Logs landen darf.
             logger.error("Webhook-Benachrichtigung fehlgeschlagen (%s)", type(e).__name__)
+
+
+# ---------------------------------------------------------------------------
+# Privacy: IP-Maskierung & Log-Scrubbing
+# ---------------------------------------------------------------------------
+def mask_ip(ip: str) -> str:
+    """Maskiert öffentliche IPs: 185.220.xxx.xxx bzw. 2a01:4f8:xxx::
+    Ungültige/leere Werte bleiben unverändert."""
+    if not ip:
+        return ip
+    ip = ip.strip()
+    if ":" in ip:  # IPv6
+        parts = ip.split(":")
+        if len(parts) >= 3:
+            return f"{parts[0]}:{parts[1]}:xxx::"
+        return ip
+    parts = ip.split(".")
+    if len(parts) == 4:
+        return f"{parts[0]}.{parts[1]}.xxx.xxx"
+    return ip
+
+
+# Muster für Secrets/Tokens in Log-Meldungen - alles wird zu *** maskiert
+_SECRET_PATTERNS = [
+    re.compile(r"(?i)(token|secret|key|passwd|password|authorization|bearer|x-gotify-key)(\s*[=:]\s*)([^\s\"'&]+)"),
+    re.compile(r"(?i)(\?|&)(token|key|secret|code|auth)=([^&\s\"']+)"),
+    re.compile(r"(https?://[^\s\"']+)"),
+]
+
+
+def scrub_log_message(message: str) -> str:
+    """Entfernt Secrets/Tokens aus Log-Meldungen (Pflicht vor Anzeige im Log-Viewer)."""
+    if not message:
+        return message
+    scrubbed = message
+    for pattern in _SECRET_PATTERNS:
+        if pattern.pattern.endswith(r"(https?://[^\s\"']+)"):
+            # URLs vollständig maskieren (können Token enthalten, z.B. Webhook-URLs)
+            scrubbed = pattern.sub("***URL***", scrubbed)
+        else:
+            scrubbed = pattern.sub(lambda m: f"{m.group(1)}{m.group(2)}***", scrubbed)
+    return scrubbed
+
+
+# ---------------------------------------------------------------------------
+# Passive Analytics: Länder & Statuscodes (read-only)
+# ---------------------------------------------------------------------------
+def _status_group(status) -> str:
+    try:
+        code = int(status)
+    except (TypeError, ValueError):
+        return "andere"
+    if 200 <= code < 300:
+        return "2xx"
+    if 300 <= code < 400:
+        return "3xx"
+    if 400 <= code < 500:
+        return "4xx"
+    if 500 <= code < 600:
+        return "5xx"
+    return "andere"
+
+
+async def fetch_passive_analytics_and_store() -> tuple[int, str | None]:
+    """Holt die letzten 24h passiv aggregiert (Herkunftsland + HTTP-Status) und speichert
+    sie als Snapshot. Gibt (anzahl_gespeicherter_zeilen, fehler) zurück.
+
+    Rein lesend - es werden keinerlei schreibende DNS-/WAF-Aktionen ausgelöst.
+    Sendet bei 5xx-Überschreitung eine Webhook-Benachrichtigung (optional)."""
+    until = datetime.now(timezone.utc)
+    since = until - timedelta(hours=24)
+
+    variables = {
+        "zoneTag": settings.CLOUDFLARE_ZONE_ID,
+        "since": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "until": until.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "limit": settings.COLLECTOR_MAX_RECORDS_PER_QUERY,
+    }
+
+    data, error = await _graphql_request(PASSIVE_ANALYTICS_QUERY, variables)
+    if error:
+        logger.warning(f"Passive Analytics übersprungen: {error}")
+        return 0, error
+
+    zones = data.get("viewer", {}).get("zones", [])
+    groups = zones[0].get("httpRequestsAdaptiveGroups", []) if zones else []
+    if not groups:
+        return 0, None
+
+    period_start = until.replace(tzinfo=None)
+    countries: dict[str, int] = {}
+    status_groups: dict[str, int] = {}
+    for g in groups:
+        count = g.get("count", 0) or 0
+        dims = g.get("dimensions", {}) or {}
+        country = (dims.get("clientCountryName") or "Unbekannt").strip() or "Unbekannt"
+        countries[country] = countries.get(country, 0) + count
+        group = _status_group(dims.get("edgeResponseStatus"))
+        status_groups[group] = status_groups.get(group, 0) + count
+
+    db = SessionLocal()
+    stored = 0
+    try:
+        for country, count in sorted(countries.items(), key=lambda item: -item[1]):
+            db.add(CountryStat(period_start=period_start, country=country[:64], requests=count))
+            stored += 1
+        for group, count in sorted(status_groups.items(), key=lambda item: -item[1]):
+            db.add(StatusCodeStat(period_start=period_start, status_group=group, requests=count))
+            stored += 1
+        db.commit()
+    finally:
+        db.close()
+
+    logger.info(
+        f"Passive Analytics gespeichert: {len(countries)} Länder, "
+        f"{len(status_groups)} Statusgruppen ({stored} Zeilen)"
+    )
+
+    # Passives Alerting: 5xx-Schwelle überschritten
+    five_xx = status_groups.get("5xx", 0)
+    if (
+        settings.WEBHOOK_ENABLED
+        and settings.WEBHOOK_ON_5XX
+        and five_xx >= settings.WEBHOOK_5XX_THRESHOLD
+    ):
+        await send_webhook_notification(
+            f"🔴 Erhöhte 5xx-Fehler: {five_xx} in den letzten 24h "
+            f"(Schwelle: {settings.WEBHOOK_5XX_THRESHOLD})"
+        )
+
+    return stored, None
 
 
 # ---------------------------------------------------------------------------
