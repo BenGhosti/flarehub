@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="de" data-theme="{{ default_theme }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>{{ app_name }} - Action Center</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="/static/auth.js"></script>
+    {% if auth_required %}
+    <script>
+        // Kein Token im sessionStorage => neuer Browser-Besuch => Login erzwingen
+        if (!getAuthToken()) window.location.replace('/login');
+    </script>
+    {% endif %}
+</head>
+<body>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Theme wechseln">
+        <svg xmlns="http://www.w3.org/2000/svg" class="theme-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path class="moon" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            <circle class="sun" cx="12" cy="12" r="5" style="display:none"/>
+            <line class="sun" x1="12" y1="1" x2="12" y2="3" style="display:none"/>
+            <line class="sun" x1="12" y1="21" x2="12" y2="23" style="display:none"/>
+            <line class="sun" x1="4.22" y1="4.22" x2="5.64" y2="5.64" style="display:none"/>
+            <line class="sun" x1="18.36" y1="18.36" x2="19.78" y2="19.78" style="display:none"/>
+            <line class="sun" x1="1" y1="12" x2="3" y2="12" style="display:none"/>
+            <line class="sun" x1="21" y1="12" x2="23" y2="12" style="display:none"/>
+            <line class="sun" x1="4.22" y1="19.78" x2="5.64" y2="18.36" style="display:none"/>
+            <line class="sun" x1="18.36" y1="5.64" x2="19.78" y2="4.22" style="display:none"/>
+        </svg>
+    </button>
+
+    <div class="container" style="max-width: 700px;">
+        <div class="top-bar">
+            <div>
+                <h1 style="font-size: 1.6rem; text-align:left;">Action Center</h1>
+                <a href="/" style="font-size: 0.85rem; color: var(--highlight-color); text-decoration:none;">← Zurück zum Dashboard</a>
+            </div>
+            <div class="top-actions">
+                <a href="/settings" style="text-decoration:none;">
+                    <button type="button" class="btn-ghost">Einstellungen</button>
+                </a>
+                <button id="logout-btn" type="button" class="btn-ghost">Abmelden</button>
+            </div>
+        </div>
+
+        {% if not zone_configured %}
+        <div class="card banner banner-danger">
+            <strong>⚠️ Cloudflare nicht konfiguriert</strong>
+            <p>Bitte <code>CLOUDFLARE_API_TOKEN</code> und <code>CLOUDFLARE_ZONE_ID</code> in der .env setzen, um die Aktionen nutzen zu können.</p>
+        </div>
+        {% endif %}
+
+        {% if feature_purge_cache %}
+        <div class="card" style="text-align:left;">
+            <h3 class="card-title">Cache leeren</h3>
+            <p class="action-desc">Löscht den Edge-Cache der Zone – unkritisch, wirkt sich nur auf gecachte Inhalte aus.</p>
+
+            <div style="margin: 1.25rem 0;">
+                <button id="btn-purge-all" type="button">Gesamten Cache leeren</button>
+            </div>
+
+            <div style="margin: 1.25rem 0;">
+                <label for="purge-urls" style="display:block; font-size: 0.85rem; margin-bottom: 0.5rem; opacity: 0.85;">
+                    Nur bestimmte URLs leeren (eine pro Zeile, max. 30):
+                </label>
+                <textarea id="purge-urls" rows="4" placeholder="https://example.com/startseite&#10;https://example.com/assets/app.js"
+                          style="width:100%; padding: 10px 12px; border-radius: 6px; border: 2px solid var(--border-color); background: var(--textarea-bg); color: var(--text-color); font-size: 0.9rem; font-family: monospace; resize: vertical;"></textarea>
+                <button id="btn-purge-urls" type="button" class="btn-small" style="margin-top: 0.75rem;">Ausgewählte URLs leeren</button>
+            </div>
+
+            <p id="cache-feedback" class="feedback-text"></p>
+        </div>
+        {% endif %}
+
+        <div class="card" style="text-align:left;">
+            <h3 class="card-title">Analytics</h3>
+            <p class="action-desc">Collector-Lauf manuell anstoßen (holt sofort frische Metriken von Cloudflare).</p>
+            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.75rem; margin-top: 1.25rem;">
+                <div>
+                    <span style="font-size: 0.85rem;">Letzter Lauf: <strong id="collector-last-run">–</strong></span>
+                    <p id="collector-last-message" style="font-size: 0.78rem; opacity: 0.65; margin-top: 2px;"></p>
+                </div>
+                <button id="btn-run-collector" type="button" class="btn-small">Jetzt ausführen</button>
+            </div>
+            <p id="collector-feedback" class="feedback-text"></p>
+        </div>
+
+        <div class="card" style="text-align:left;">
+            <h3 class="card-title" style="display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap;">
+                Zone-Status (read-only)
+                <button id="btn-refresh-zone" type="button" class="btn-small">Aktualisieren</button>
+            </h3>
+            <div id="zone-status-container">
+                <p style="opacity:0.6; font-size:0.9rem;">Lade Zone-Settings...</p>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .top-bar {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 1.75rem;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+        }
+        .top-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+        .btn-ghost {
+            background: var(--secondary-color);
+            color: var(--text-color);
+            padding: 8px 16px;
+            font-size: 0.85rem;
+        }
+        .btn-small { padding: 6px 14px; font-size: 0.82rem; }
+        .card {
+            background: var(--container-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 1.25rem 1.5rem;
+            margin-bottom: 1.25rem;
+        }
+        .card-title { margin-bottom: 0.75rem; font-size: 1rem; font-weight: 600; }
+        .action-desc { font-size: 0.8rem; opacity: 0.65; margin-top: 2px; }
+        .banner { border-left: 4px solid var(--danger-color); }
+        .banner p { font-size: 0.85rem; margin-top: 4px; opacity: 0.8; }
+        .feedback-text { font-size: 0.8rem; margin-top: 0.75rem; min-height: 1.2em; }
+        .zone-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+        .zone-table td { padding: 8px 10px; border-bottom: 1px solid var(--border-color); }
+        .zone-table tr:last-child td { border-bottom: none; }
+        .zone-table td:first-child { opacity: 0.7; width: 45%; }
+        .zone-badge {
+            display: inline-block; padding: 2px 8px; border-radius: 4px;
+            font-size: 0.72rem; font-weight: 600;
+            background: rgba(128,128,128,0.18); color: var(--text-color);
+        }
+        .zone-badge.on { background: rgba(76,175,80,0.18); color: #4caf50; }
+        .zone-badge.off { background: rgba(244,67,54,0.18); color: #f44336; }
+    </style>
+
+    <script>
+        // --- Theme (localStorage + Server-Default) ---
+        const savedTheme = localStorage.getItem('theme') || '{{ default_theme }}';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        applyThemeIcon(savedTheme);
+
+        document.getElementById('theme-toggle').addEventListener('click', () => {
+            const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            localStorage.setItem('theme', next);
+            applyThemeIcon(next);
+        });
+
+        function applyThemeIcon(theme) {
+            document.querySelectorAll('.moon').forEach(p => p.style.display = theme === 'dark' ? 'none' : '');
+            document.querySelectorAll('.sun').forEach(p => p.style.display = theme === 'dark' ? '' : 'none');
+        }
+
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            try { await authFetch('/api/auth/logout', { method: 'POST' }); } catch (_) {}
+            logout();
+        });
+
+        function fmtRelativeTime(isoString) {
+            if (!isoString) return 'noch nie';
+            const diffMs = Date.now() - new Date(isoString + 'Z').getTime();
+            const diffMin = Math.round(diffMs / 60000);
+            if (diffMin < 1) return 'gerade eben';
+            if (diffMin < 60) return `vor ${diffMin} Min.`;
+            const diffH = Math.round(diffMin / 60);
+            return `vor ${diffH} Std.`;
+        }
+
+        function showFeedback(id, msg, isError = false) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = msg;
+            el.style.color = isError ? 'var(--danger-color)' : 'var(--highlight-color)';
+            setTimeout(() => { el.textContent = ''; }, 5000);
+        }
+
+        // --- Cache ---
+        document.getElementById('btn-purge-all')?.addEventListener('click', async (e) => {
+            e.target.disabled = true;
+            try {
+                const res = await authFetch('/api/zone/purge-cache', { method: 'POST' });
+                if (!res.ok) throw new Error((await res.json()).detail);
+                showFeedback('cache-feedback', 'Gesamter Cache erfolgreich geleert');
+            } catch (err) {
+                showFeedback('cache-feedback', 'Fehler: ' + err.message, true);
+            } finally {
+                e.target.disabled = false;
+            }
+        });
+
+        document.getElementById('btn-purge-urls')?.addEventListener('click', async (e) => {
+            e.target.disabled = true;
+            try {
+                const urls = document.getElementById('purge-urls').value.split('\n')
+                    .map(u => u.trim()).filter(u => u.length > 0);
+                if (!urls.length) throw new Error('Keine URLs eingetragen');
+                const res = await authFetch('/api/zone/purge-cache-urls', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ urls })
+                });
+                if (!res.ok) throw new Error((await res.json()).detail);
+                showFeedback('cache-feedback', `${urls.length} URL(s) aus dem Cache geleert`);
+                document.getElementById('purge-urls').value = '';
+            } catch (err) {
+                showFeedback('cache-feedback', 'Fehler: ' + err.message, true);
+            } finally {
+                e.target.disabled = false;
+            }
+        });
+
+        // --- Collector ---
+        async function loadCollectorStatus() {
+            const res = await authFetch('/api/collector/status');
+            if (!res.ok) return;
+            const data = await res.json();
+            const lastRunEl = document.getElementById('collector-last-run');
+            const lastMsgEl = document.getElementById('collector-last-message');
+            if (data.last_run) {
+                lastRunEl.textContent = fmtRelativeTime(data.last_run.timestamp) +
+                    (data.last_run.success ? ' · OK' : ' · Fehler');
+                lastRunEl.style.color = data.last_run.success ? 'var(--highlight-color)' : 'var(--danger-color)';
+                lastMsgEl.textContent = data.last_run.message || '';
+            } else {
+                lastRunEl.textContent = 'noch nie';
+            }
+        }
+
+        document.getElementById('btn-run-collector')?.addEventListener('click', async (e) => {
+            e.target.disabled = true;
+            e.target.textContent = 'Läuft...';
+            try {
+                const res = await authFetch('/api/collector/run-now', { method: 'POST' });
+                if (!res.ok) throw new Error((await res.json()).detail);
+                showFeedback('collector-feedback', 'Collector-Lauf abgeschlossen');
+                await loadCollectorStatus();
+            } catch (err) {
+                showFeedback('collector-feedback', 'Fehler: ' + err.message, true);
+            } finally {
+                e.target.disabled = false;
+                e.target.textContent = 'Jetzt ausführen';
+            }
+        });
+
+        // --- Zone-Status ---
+        const SETTING_LABELS = {
+            development_mode: 'Development Mode',
+            security_level: 'Security Level',
+            ssl: 'SSL',
+            min_tls_version: 'Min. TLS-Version',
+            http2: 'HTTP/2',
+            http3: 'HTTP/3',
+            ipv6: 'IPv6',
+            brotli: 'Brotli',
+            always_online: 'Always Online',
+            cache_level: 'Cache-Level'
+        };
+
+        function renderZoneStatus(data) {
+            const container = document.getElementById('zone-status-container');
+            if (!data.configured) {
+                container.innerHTML = `<p style="opacity:0.6; font-size:0.9rem;">${data.error || 'Nicht verfügbar'}</p>`;
+                return;
+            }
+            const rows = Object.entries(SETTING_LABELS).map(([key, label]) => {
+                const value = data.settings[key];
+                const text = value === null || value === undefined ? '–' : String(value);
+                const badgeClass = (text === 'on' || text === 'true') ? 'on' : (text === 'off' || text === 'false') ? 'off' : '';
+                return `<tr><td>${label}</td><td><span class="zone-badge ${badgeClass}">${text}</span></td></tr>`;
+            }).join('');
+            container.innerHTML = `<table class="zone-table">${rows}</table>`;
+        }
+
+        async function loadZoneStatus() {
+            const container = document.getElementById('zone-status-container');
+            container.innerHTML = '<p style="opacity:0.6; font-size:0.9rem;">Lade Zone-Settings...</p>';
+            const res = await authFetch('/api/zone/settings-summary');
+            if (!res.ok) {
+                container.innerHTML = '<p style="opacity:0.6; font-size:0.9rem;">Konnte Zone-Settings nicht laden.</p>';
+                return;
+            }
+            renderZoneStatus(await res.json());
+        }
+
+        document.getElementById('btn-refresh-zone')?.addEventListener('click', loadZoneStatus);
+
+        // --- Init ---
+        loadCollectorStatus();
+        loadZoneStatus();
+    </script>
+</body>
+</html>
