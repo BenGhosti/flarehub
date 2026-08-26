@@ -5,7 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>{{ app_name }}</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <script src="/static/auth.js"></script>
     <script src="/static/vendor/chart.umd.min.js"></script>
+    {% if auth_required %}
+    <script>
+        // Kein Token im sessionStorage => neuer Browser-Besuch => Login erzwingen
+        if (!getAuthToken()) window.location.replace('/login');
+    </script>
+    {% endif %}
 </head>
 <body>
     <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Theme wechseln">
@@ -299,8 +306,8 @@
         }
 
         document.getElementById('logout-btn').addEventListener('click', async () => {
-            await fetch('/api/auth/logout', { method: 'POST' });
-            window.location.href = '/login';
+            try { await authFetch('/api/auth/logout', { method: 'POST' }); } catch (_) {}
+            logout();
         });
 
         function fmtNumber(n) {
@@ -324,7 +331,7 @@
         }
 
         async function loadSummary() {
-            const res = await fetch('/api/analytics/summary');
+            const res = await authFetch('/api/analytics/summary');
             if (!res.ok) return;
             const data = await res.json();
             document.getElementById('stat-requests').textContent = fmtNumber(data.requests_24h);
@@ -335,7 +342,7 @@
         }
 
         async function loadCollectorStatus() {
-            const res = await fetch('/api/collector/status');
+            const res = await authFetch('/api/collector/status');
             if (!res.ok) return;
             const data = await res.json();
             const banner = document.getElementById('collector-error-banner');
@@ -373,7 +380,7 @@
         }
 
         async function loadTimeseries() {
-            const res = await fetch(`/api/analytics/timeseries?range=${currentRange}`);
+            const res = await authFetch(`/api/analytics/timeseries?range=${currentRange}`);
             if (!res.ok) return;
             const data = await res.json();
             const hasData = data.labels && data.labels.length > 0;
@@ -474,7 +481,7 @@
         async function loadSecurityFeed() {
             const body = document.getElementById('security-feed-body');
             if (!body) return;
-            const res = await fetch('/api/security/feed');
+            const res = await authFetch('/api/security/feed');
             if (!res.ok) return;
             const events = await res.json();
             if (!events.length) {
@@ -493,7 +500,7 @@
         }
 
         async function loadZoneStatus() {
-            const res = await fetch('/api/zone/status');
+            const res = await authFetch('/api/zone/status');
             if (!res.ok) return;
             const data = await res.json();
             const devToggle = document.getElementById('toggle-dev-mode');
@@ -512,7 +519,7 @@
 
         document.getElementById('toggle-dev-mode')?.addEventListener('change', async (e) => {
             try {
-                const res = await fetch('/api/zone/dev-mode', {
+                const res = await authFetch('/api/zone/dev-mode', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ enabled: e.target.checked })
@@ -527,7 +534,7 @@
 
         document.getElementById('toggle-under-attack')?.addEventListener('change', async (e) => {
             try {
-                const res = await fetch('/api/zone/under-attack', {
+                const res = await authFetch('/api/zone/under-attack', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ enabled: e.target.checked })
@@ -543,7 +550,7 @@
         document.getElementById('btn-purge-cache')?.addEventListener('click', async (e) => {
             e.target.disabled = true;
             try {
-                const res = await fetch('/api/zone/purge-cache', { method: 'POST' });
+                const res = await authFetch('/api/zone/purge-cache', { method: 'POST' });
                 if (!res.ok) throw new Error((await res.json()).detail);
                 showFeedback('Cache erfolgreich geleert');
             } catch (err) {

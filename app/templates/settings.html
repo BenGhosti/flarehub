@@ -5,7 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>{{ app_name }} - Einstellungen</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <script src="/static/auth.js"></script>
     <script src="/static/webauthn.js"></script>
+    {% if auth_required %}
+    <script>
+        // Kein Token im sessionStorage => neuer Browser-Besuch => Login erzwingen
+        if (!getAuthToken()) window.location.replace('/login');
+    </script>
+    {% endif %}
 </head>
 <body>
     <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Theme wechseln">
@@ -343,7 +350,7 @@
 
         async function loadStorageStats() {
             const container = document.getElementById('storage-stats-container');
-            const res = await fetch('/api/collector/status');
+            const res = await authFetch('/api/collector/status');
             if (!res.ok) {
                 container.innerHTML = '<p style="opacity:0.6; font-size:0.9rem;">Konnte Statistik nicht laden.</p>';
                 return;
@@ -392,7 +399,7 @@
             e.target.disabled = true;
             e.target.textContent = 'Läuft...';
             try {
-                await fetch('/api/collector/run-now', { method: 'POST' });
+                await authFetch('/api/collector/run-now', { method: 'POST' });
                 await loadStorageStats();
             } finally {
                 e.target.disabled = false;
@@ -407,7 +414,7 @@
         const adminError = document.getElementById('admin-token-error');
 
         async function checkAdminStatus() {
-            const res = await fetch('/api/admin/status');
+            const res = await authFetch('/api/admin/status');
             if (!res.ok) return;
             const data = await res.json();
             if (data.admin_unlocked) {
@@ -426,7 +433,7 @@
             adminError.textContent = '';
             const token = document.getElementById('admin-token-input').value;
             try {
-                const res = await fetch('/api/admin/verify', {
+                const res = await authFetch('/api/admin/verify', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ token })
@@ -435,6 +442,8 @@
                     const err = await res.json();
                     throw new Error(err.detail || 'Ungültiges Token');
                 }
+                const data = await res.json();
+                setAdminGrant(data.grant);
                 unlockManagement();
             } catch (err) {
                 adminError.textContent = err.message;
@@ -444,7 +453,7 @@
         async function loadPasskeys() {
             const container = document.getElementById('passkey-list-container');
             try {
-                const res = await fetch('/api/passkey/list');
+                const res = await authFetch('/api/passkey/list');
                 if (!res.ok) {
                     container.innerHTML = '<div class="empty-message">Konnte Passkeys nicht laden.</div>';
                     return;
@@ -492,7 +501,7 @@
         async function removePasskey(credentialRowId, name) {
             if (!confirm(`Passkey "${name}" wirklich löschen?`)) return;
             try {
-                const res = await fetch(`/api/passkey/${credentialRowId}`, { method: 'DELETE' });
+                const res = await authFetch(`/api/passkey/${credentialRowId}`, { method: 'DELETE' });
                 if (res.ok) {
                     statusMessage(`Passkey "${name}" gelöscht`, 'success');
                     loadPasskeys();
@@ -529,7 +538,7 @@
             setAddButtonLoading(true);
             try {
                 // 1. Registrierungs-Optionen laden
-                const optionsResponse = await fetch('/api/passkey/register-options', { method: 'POST' });
+                const optionsResponse = await authFetch('/api/passkey/register-options', { method: 'POST' });
                 if (!optionsResponse.ok) {
                     const data = await optionsResponse.json();
                     throw new Error(data.detail || 'Registrierungs-Optionen konnten nicht geladen werden');
@@ -542,7 +551,7 @@
                 });
 
                 // 3. Auf dem Server verifizieren
-                const verifyResponse = await fetch('/api/passkey/register-verify', {
+                const verifyResponse = await authFetch('/api/passkey/register-verify', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
