@@ -171,6 +171,12 @@
             return `vor ${diffH} Std.`;
         }
 
+        function esc(s) {
+            return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[c]);
+        }
+
         function showFeedback(id, msg, isError = false) {
             const el = document.getElementById(id);
             if (!el) return;
@@ -269,9 +275,9 @@
             }
             const rows = Object.entries(SETTING_LABELS).map(([key, label]) => {
                 const value = data.settings[key];
-                const text = value === null || value === undefined ? '–' : String(value);
+                const text = (value === null || value === undefined) ? '–' : String(value);
                 const badgeClass = (text === 'on' || text === 'true') ? 'on' : (text === 'off' || text === 'false') ? 'off' : '';
-                return `<tr><td>${label}</td><td><span class="zone-badge ${badgeClass}">${text}</span></td></tr>`;
+                return `<tr><td>${label}</td><td><span class="zone-badge ${badgeClass}">${esc(text)}</span></td></tr>`;
             }).join('');
             container.innerHTML = `<table class="zone-table">${rows}</table>`;
         }

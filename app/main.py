@@ -60,6 +60,33 @@ async def csrf_origin_check(request: Request, call_next):
 
 
 @app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Setzt Security-Header auf alle Antworten (abschaltbar per .env).
+
+    - CSP: nur eigene Ressourcen (inline-Script/Style erlaubt, keine externen Origins)
+    - X-Frame-Options: DENY gegen Clickjacking
+    - X-Content-Type-Options: nosniff gegen MIME-Sniffing
+    - Referrer-Policy: no-referrer (keine Leaks an fremde Seiten)"""
+    response = await call_next(request)
+    if settings.SECURITY_HEADERS_ENABLED:
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self'",
+        )
+    return response
+
+
+@app.middleware("http")
 async def no_store_cache(request: Request, call_next):
     """Verhindert Browser-Caching von authentifiziertem Inhalt (Seiten + APIs).
 

@@ -5,6 +5,9 @@ services:
     build: .
     container_name: flarehub
     restart: unless-stopped
+    # Container läuft als UID 1001 (non-root). Das gemountete Host-Verzeichnis
+    # muss von UID 1001 beschreibbar sein, einmalig ausführen:
+    #   chown -R 1001:1001 ./data
     ports:
       - "8000:8000"
     volumes:

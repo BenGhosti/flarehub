@@ -39,7 +39,8 @@ class Settings:
     AUTH_MODE: str = os.getenv("AUTH_MODE", "both").lower()  # pin | passkey | both | none
 
     AUTH_PIN_HASH: str = os.getenv("AUTH_PIN_HASH", "")
-    AUTH_PIN_LENGTH: int = _int("AUTH_PIN_LENGTH", 4)
+    # Laenge der PIN. 6+ Stellen fuer kritische Infrastruktur empfohlen.
+    AUTH_PIN_LENGTH: int = _int("AUTH_PIN_LENGTH", 6)
     AUTH_PIN_MAX_ATTEMPTS: int = _int("AUTH_PIN_MAX_ATTEMPTS", 5)
     AUTH_PIN_LOCKOUT_SECONDS: int = _int("AUTH_PIN_LOCKOUT_SECONDS", 300)
 
@@ -55,10 +56,14 @@ class Settings:
     # Gültigkeit des Login-Tokens (Bearer) in Stunden. Da das Token nur im
     # sessionStorage des Browsers liegt, muss man sich bei jedem neuen
     # Browser-Besuch ohnehin neu anmelden - dies ist nur ein oberes Limit.
-    SESSION_EXPIRY_HOURS: int = _int("SESSION_EXPIRY_HOURS", 12)
+    # Für kritische Infrastruktur eher niedrig waehlen (z.B. 2-4).
+    SESSION_EXPIRY_HOURS: int = _int("SESSION_EXPIRY_HOURS", 4)
     # true (Standard): Seiten/API-Antworten (ausser /static) erhalten
     # Cache-Control: no-store, damit kein authentifizierter Inhalt im Browser gecacht wird.
     HTTP_CACHE_NO_STORE: bool = _bool("HTTP_CACHE_NO_STORE", True)
+    # true (Standard): setzt Security-Header (CSP, X-Frame-Options: DENY,
+    # X-Content-Type-Options: nosniff, Referrer-Policy) auf alle Antworten.
+    SECURITY_HEADERS_ENABLED: bool = _bool("SECURITY_HEADERS_ENABLED", True)
 
     # --- Cloudflare ---
     CLOUDFLARE_API_TOKEN: str = os.getenv("CLOUDFLARE_API_TOKEN", "")

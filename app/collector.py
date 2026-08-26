@@ -307,7 +307,9 @@ async def send_webhook_notification(message: str):
         try:
             await client.post(settings.NOTIFY_WEBHOOK_URL, json={"content": message})
         except httpx.HTTPError as e:
-            logger.error(f"Webhook-Benachrichtigung fehlgeschlagen: {e}")
+            # Nur Fehlertyp loggen - die Exception-Nachricht enthält die
+            # Webhook-URL inkl. Token/Secret, das niemals in Logs landen darf.
+            logger.error("Webhook-Benachrichtigung fehlgeschlagen (%s)", type(e).__name__)
 
 
 # ---------------------------------------------------------------------------

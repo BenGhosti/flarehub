@@ -12,7 +12,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
 
-RUN mkdir -p /app/data
+# Härtung: Container läuft NICHT als root.
+# UID 1001: Host-Verzeichnis von ./data einmalig anpassen, falls nötig:
+#   chown -R 1001:1001 data/
+RUN useradd --system --uid 1001 --no-create-home appuser \
+    && mkdir -p /app/data \
+    && chown -R appuser:appuser /app
+USER appuser
 
 EXPOSE 8000
 
