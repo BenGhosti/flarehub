@@ -97,6 +97,25 @@ Millionen Rohdatenpunkte abzufragen). Auf der Einstellungsseite zeigt der Bereic
 **System & Datenspeicher** die aktuelle Zeilenzahl je Stufe sowie den Status des letzten
 Collector-Laufs (inkl. Fehlermeldung, falls z.B. das Cloudflare-Token ungültig ist).
 
+## Test-Server (UI-Preview ohne Cloudflare)
+
+Auf Windows (auch direkt vom NAS-Laufwerk) startet `test-webserver.bat` einen
+Dummy-Server, um die komplette UI (Login, Dashboard, Charts, Security-Feed,
+Einstellungen) ohne echte Cloudflare-Zugangsdaten zu begutachten:
+
+```bat
+test-webserver.bat          :: Standard-Port 8000
+test-webserver.bat 8080     :: eigener Port
+```
+
+- Login: **PIN 1234**
+- Admin-Token (Einstellungen → Passkey-Verwaltung): **test-admin-token**
+- Legt automatisch eine lokale Python-Umgebung an (`%LOCALAPPDATA%\FlareHub\venv`)
+  und installiert die Abhängigkeiten beim ersten Start.
+- Befüllt `data/test.db` über `scripts/seed_demo_data.py` mit realistischen
+  Beispieldaten (alle Zeiträume 6h–1J, 50 Security-Events).
+- Öffnet den Browser automatisch; Beenden mit `Ctrl+C` im Konsolenfenster.
+
 ## Cloudflare API – Hinweise
 
 - Genutzter GraphQL-Node: `httpRequests1mGroups` (Zone-scope, 10-Minuten-Rohwerte für
