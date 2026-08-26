@@ -40,6 +40,11 @@
                 <span id="live-indicator" class="live-indicator" title="Letztes Update">
                     <span class="live-dot"></span><span id="live-text">–</span>
                 </span>
+                {% if feature_action_center %}
+                <a href="/actions" style="text-decoration:none;">
+                    <button type="button" class="btn-ghost">Action Center</button>
+                </a>
+                {% endif %}
                 <a href="/settings" style="text-decoration:none;">
                     <button type="button" class="btn-ghost">Einstellungen</button>
                 </a>
@@ -127,7 +132,7 @@
         </div>
         {% endif %}
 
-        {% if feature_requests_chart or feature_bandwidth_chart or feature_cache_ratio_chart or feature_threats_chart %}
+        {% if feature_requests_chart or feature_bandwidth_chart or feature_cache_ratio_chart or feature_threats_chart or feature_cache_donut_chart or feature_threat_donut_chart or feature_visitors_chart or feature_pageviews_chart or feature_cached_uncached_chart %}
         <div class="range-selector" id="range-selector">
             <button type="button" class="range-btn" data-range="6h">6h</button>
             <button type="button" class="range-btn active" data-range="24h">24h</button>
@@ -146,6 +151,7 @@
         </div>
         {% endif %}
 
+        {% if feature_bandwidth_chart or feature_cache_ratio_chart %}
         <div class="chart-row">
             {% if feature_bandwidth_chart %}
             <div class="card chart-card chart-card-half" style="text-align:left;">
@@ -163,12 +169,65 @@
             </div>
             {% endif %}
         </div>
+        {% endif %}
 
-        {% if feature_threats_chart %}
-        <div class="card chart-card" style="text-align:left;">
-            <h3 class="card-title">Threats</h3>
-            <div class="chart-wrap"><canvas id="chart-threats"></canvas></div>
-            <p class="chart-empty" id="chart-threats-empty" style="display:none;">Noch keine Daten für diesen Zeitraum</p>
+        {% if feature_cache_donut_chart or feature_cached_uncached_chart %}
+        <div class="chart-row">
+            {% if feature_cache_donut_chart %}
+            <div class="card chart-card chart-card-half" style="text-align:left;">
+                <h3 class="card-title">Cache-Aufteilung</h3>
+                <div class="chart-wrap"><canvas id="chart-cache-donut"></canvas></div>
+                <p class="chart-empty" id="chart-cache-donut-empty" style="display:none;">Noch keine Daten für diesen Zeitraum</p>
+            </div>
+            {% endif %}
+
+            {% if feature_cached_uncached_chart %}
+            <div class="card chart-card chart-card-half" style="text-align:left;">
+                <h3 class="card-title">Cached vs. Uncached</h3>
+                <div class="chart-wrap"><canvas id="chart-cached-uncached"></canvas></div>
+                <p class="chart-empty" id="chart-cached-uncached-empty" style="display:none;">Noch keine Daten für diesen Zeitraum</p>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% if feature_visitors_chart or feature_pageviews_chart %}
+        <div class="chart-row">
+            {% if feature_visitors_chart %}
+            <div class="card chart-card chart-card-half" style="text-align:left;">
+                <h3 class="card-title">Unique Visitors</h3>
+                <div class="chart-wrap"><canvas id="chart-visitors"></canvas></div>
+                <p class="chart-empty" id="chart-visitors-empty" style="display:none;">Noch keine Daten für diesen Zeitraum</p>
+            </div>
+            {% endif %}
+
+            {% if feature_pageviews_chart %}
+            <div class="card chart-card chart-card-half" style="text-align:left;">
+                <h3 class="card-title">Page Views</h3>
+                <div class="chart-wrap"><canvas id="chart-pageviews"></canvas></div>
+                <p class="chart-empty" id="chart-pageviews-empty" style="display:none;">Noch keine Daten für diesen Zeitraum</p>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {% if feature_threats_chart or feature_threat_donut_chart %}
+        <div class="chart-row">
+            {% if feature_threats_chart %}
+            <div class="card chart-card chart-card-half" style="text-align:left;">
+                <h3 class="card-title">Threats</h3>
+                <div class="chart-wrap"><canvas id="chart-threats"></canvas></div>
+                <p class="chart-empty" id="chart-threats-empty" style="display:none;">Noch keine Daten für diesen Zeitraum</p>
+            </div>
+            {% endif %}
+
+            {% if feature_threat_donut_chart %}
+            <div class="card chart-card chart-card-half" style="text-align:left;">
+                <h3 class="card-title">Threat-Aktionen</h3>
+                <div class="chart-wrap"><canvas id="chart-threat-donut"></canvas></div>
+                <p class="chart-empty" id="chart-threat-donut-empty" style="display:none;">Noch keine Ereignisse für diesen Zeitraum</p>
+            </div>
+            {% endif %}
         </div>
         {% endif %}
 
@@ -298,6 +357,7 @@
             localStorage.setItem('theme', next);
             applyThemeIcon(next);
             loadTimeseries(); // Chart-Textfarben neu anwenden
+            loadDonuts();
         });
 
         function applyThemeIcon(theme) {
@@ -356,7 +416,11 @@
         }
 
         let chartRequests, chartBandwidth, chartThreats, chartCacheRatio;
-        const chartColors = { primary: '#FF5E1F', secondary: '#999', good: '#4caf50', danger: '#f44336' };
+        let chartCachedUncached, chartVisitors, chartPageviews, chartCacheDonut, chartThreatDonut;
+        const chartColors = {
+            primary: '#FF5E1F', secondary: '#999', good: '#4caf50', danger: '#f44336',
+            info: '#2196F3', purple: '#9C27B0', warn: '#f0a020'
+        };
 
         function chartOptions(extra = {}) {
             const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-color').trim() || '#888';
@@ -460,6 +524,129 @@
                     });
                 }
             }
+
+            // --- Cached vs. Uncached (Stacked Area) ---
+            const cuCanvas = document.getElementById('chart-cached-uncached');
+            if (cuCanvas) {
+                toggleEmpty('chart-cached-uncached', !hasData);
+                if (chartCachedUncached) chartCachedUncached.destroy();
+                if (hasData) {
+                    chartCachedUncached = new Chart(cuCanvas, {
+                        type: 'line',
+                        data: {
+                            labels: data.labels,
+                            datasets: [
+                                { label: 'Cached', data: data.requests_cached, borderColor: chartColors.good, backgroundColor: 'rgba(76,175,80,0.25)', fill: true, tension: 0.3, pointRadius: 0 },
+                                { label: 'Uncached', data: data.requests_uncached, borderColor: chartColors.primary, backgroundColor: 'rgba(255,94,31,0.25)', fill: true, tension: 0.3, pointRadius: 0 }
+                            ]
+                        },
+                        options: chartOptions({
+                            scales: {
+                                x: { stacked: true, ticks: { color: '#888', maxTicksLimit: 7, font: { size: 10 } }, grid: { display: false } },
+                                y: { stacked: true, ticks: { color: '#888', font: { size: 10 } }, grid: { color: 'rgba(128,128,128,0.15)' } }
+                            }
+                        })
+                    });
+                }
+            }
+
+            // --- Unique Visitors ---
+            const visCanvas = document.getElementById('chart-visitors');
+            if (visCanvas) {
+                toggleEmpty('chart-visitors', !hasData);
+                if (chartVisitors) chartVisitors.destroy();
+                if (hasData) {
+                    chartVisitors = new Chart(visCanvas, {
+                        type: 'line',
+                        data: {
+                            labels: data.labels,
+                            datasets: [
+                                { label: 'Unique Visitors', data: data.unique_visitors, borderColor: chartColors.info, backgroundColor: 'rgba(33,150,243,0.1)', fill: true, tension: 0.3, pointRadius: 0 }
+                            ]
+                        },
+                        options: chartOptions()
+                    });
+                }
+            }
+
+            // --- Page Views ---
+            const pvCanvas = document.getElementById('chart-pageviews');
+            if (pvCanvas) {
+                toggleEmpty('chart-pageviews', !hasData);
+                if (chartPageviews) chartPageviews.destroy();
+                if (hasData) {
+                    chartPageviews = new Chart(pvCanvas, {
+                        type: 'line',
+                        data: {
+                            labels: data.labels,
+                            datasets: [
+                                { label: 'Page Views', data: data.page_views, borderColor: chartColors.purple, backgroundColor: 'rgba(156,39,176,0.1)', fill: true, tension: 0.3, pointRadius: 0 }
+                            ]
+                        },
+                        options: chartOptions()
+                    });
+                }
+            }
+        }
+
+        function donutOptions() {
+            const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-color').trim() || '#888';
+            return {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '62%',
+                plugins: { legend: { position: 'bottom', labels: { color: textColor, boxWidth: 12, font: { size: 11 } } } }
+            };
+        }
+
+        async function loadDonuts() {
+            const res = await authFetch(`/api/analytics/donuts?range=${currentRange}`);
+            if (!res.ok) return;
+            const data = await res.json();
+
+            const cacheCanvas = document.getElementById('chart-cache-donut');
+            if (cacheCanvas) {
+                const hasCache = (data.cache.cached + data.cache.uncached) > 0;
+                toggleEmpty('chart-cache-donut', !hasCache);
+                if (chartCacheDonut) chartCacheDonut.destroy();
+                if (hasCache) {
+                    chartCacheDonut = new Chart(cacheCanvas, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Cached', 'Uncached'],
+                            datasets: [{
+                                data: [data.cache.cached, data.cache.uncached],
+                                backgroundColor: [chartColors.good, chartColors.primary],
+                                borderWidth: 0
+                            }]
+                        },
+                        options: donutOptions()
+                    });
+                }
+            }
+
+            const threatCanvas = document.getElementById('chart-threat-donut');
+            if (threatCanvas) {
+                const actions = data.threat_actions || [];
+                const hasThreats = actions.length > 0;
+                toggleEmpty('chart-threat-donut', !hasThreats);
+                if (chartThreatDonut) chartThreatDonut.destroy();
+                if (hasThreats) {
+                    const palette = [chartColors.danger, chartColors.warn, chartColors.secondary, chartColors.purple, chartColors.info, chartColors.good];
+                    chartThreatDonut = new Chart(threatCanvas, {
+                        type: 'doughnut',
+                        data: {
+                            labels: actions.map(a => esc(a.action)),
+                            datasets: [{
+                                data: actions.map(a => a.count),
+                                backgroundColor: palette.slice(0, actions.length),
+                                borderWidth: 0
+                            }]
+                        },
+                        options: donutOptions()
+                    });
+                }
+            }
         }
 
         document.querySelectorAll('.range-btn').forEach(btn => {
@@ -468,6 +655,7 @@
                 btn.classList.add('active');
                 currentRange = btn.dataset.range;
                 loadTimeseries();
+                loadDonuts();
             });
         });
 
@@ -561,7 +749,7 @@
         });
 
         async function refreshAll() {
-            await Promise.all([loadSummary(), loadTimeseries(), loadSecurityFeed(), loadZoneStatus(), loadCollectorStatus()]);
+            await Promise.all([loadSummary(), loadTimeseries(), loadDonuts(), loadSecurityFeed(), loadZoneStatus(), loadCollectorStatus()]);
         }
 
         refreshAll();
