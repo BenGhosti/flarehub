@@ -5,6 +5,7 @@ FastAPI-Backend mit Jinja2-Templates, WebAuthn/PIN-Auth und Cloudflare GraphQL-A
 import logging
 import time
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -37,6 +38,27 @@ scheduler = AsyncIOScheduler()
 _rate_limit_buckets: dict = {}
 
 
+@app.middleware("http")
+async def csrf_origin_check(request: Request, call_next):
+    """Leichtgewichtiger CSRF-Schutz für zustandsverändernde Requests.
+
+    Bei POST/PUT/PATCH/DELETE wird geprüft, dass ein gesendeter Origin-Header zum
+    Host-Header passt (Same-Origin). Requests ohne Origin-Header (curl, Server-to-Server)
+    bleiben erlaubt. Zusammen mit dem SameSite=Lax-Cookie verhindert das Cross-Site-
+    Requests gegen Quick Actions / Passkey-Verwaltung."""
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        origin = request.headers.get("origin")
+        if origin:
+            host = request.headers.get("host", "")
+            try:
+                origin_host = urlparse(origin).netloc
+            except ValueError:
+                origin_host = ""
+            if origin_host and origin_host != host:
+                return JSONResponse(status_code=403, content={"detail": "Cross-Origin Request abgelehnt"})
+    return await call_next(request)
+
+
 def _rate_limit_ok(ip: str) -> bool:
     if not settings.RATE_LIMIT_ENABLED:
         return True
@@ -56,6 +78,9 @@ async def on_startup():
         logger.info(f"Auth-Modus: {settings.AUTH_MODE}")
     else:
         logger.warning("AUTH_MODE=none – Dashboard ist UNGESCHÜTZT erreichbar!")
+
+    if settings.SESSION_SECRET_KEY == "change-me-to-a-long-random-string":
+        logger.warning("SESSION_SECRET_KEY ist noch der Default-Wert – bitte in der .env auf einen zufälligen String setzen!")
 
     scheduler.add_job(
         collector.fetch_analytics_and_store,
@@ -247,6 +272,7 @@ async def passkey_delete(
 async def logout():
     response = JSONResponse({"success": True})
     response.delete_cookie(settings.SESSION_COOKIE_NAME)
+    response.delete_cookie("flarehub_admin_grant")
     return response
 
 
@@ -503,6 +529,14 @@ class ToggleGeneric(BaseModel):
     enabled: bool
 
 
+def _require_zone_configured():
+    if not settings.CLOUDFLARE_API_TOKEN or not settings.CLOUDFLARE_ZONE_ID:
+        raise HTTPException(
+            status_code=400,
+            detail="Cloudflare nicht konfiguriert (CLOUDFLARE_API_TOKEN / CLOUDFLARE_ZONE_ID in der .env setzen)",
+        )
+
+
 @app.get("/api/zone/status")
 async def zone_status(_auth: bool = Depends(auth.get_current_session)):
     dev_mode = await collector.get_zone_setting("development_mode")
@@ -517,6 +551,7 @@ async def zone_status(_auth: bool = Depends(auth.get_current_session)):
 async def toggle_dev_mode(payload: ToggleGeneric, _auth: bool = Depends(auth.get_current_session)):
     if not settings.FEATURE_DEV_MODE_TOGGLE:
         raise HTTPException(status_code=403, detail="Feature deaktiviert")
+    _require_zone_configured()
     ok, message = await collector.toggle_development_mode(payload.enabled)
     if not ok:
         raise HTTPException(status_code=502, detail=message)
@@ -527,6 +562,7 @@ async def toggle_dev_mode(payload: ToggleGeneric, _auth: bool = Depends(auth.get
 async def toggle_under_attack(payload: ToggleGeneric, _auth: bool = Depends(auth.get_current_session)):
     if not settings.FEATURE_UNDER_ATTACK_TOGGLE:
         raise HTTPException(status_code=403, detail="Feature deaktiviert")
+    _require_zone_configured()
     ok, message = await collector.toggle_under_attack_mode(payload.enabled)
     if not ok:
         raise HTTPException(status_code=502, detail=message)
@@ -537,6 +573,7 @@ async def toggle_under_attack(payload: ToggleGeneric, _auth: bool = Depends(auth
 async def purge_cache_endpoint(_auth: bool = Depends(auth.get_current_session)):
     if not settings.FEATURE_PURGE_CACHE:
         raise HTTPException(status_code=403, detail="Feature deaktiviert")
+    _require_zone_configured()
     ok, message = await collector.purge_cache(purge_everything=True)
     if not ok:
         raise HTTPException(status_code=502, detail=message)
