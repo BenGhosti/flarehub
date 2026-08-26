@@ -22,23 +22,34 @@
         </svg>
     </button>
 
-    <div class="container" style="max-width: 1100px;">
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 1.5rem;">
-            <h1 style="font-size: 1.8rem; text-align:left;">{{ app_name }}</h1>
-            <div style="display:flex; gap: 0.5rem;">
+    <div class="container" style="max-width: 1140px;">
+        <div class="top-bar">
+            <div class="brand-row">
+                <span class="brand-dot"></span>
+                <h1>{{ app_name }}</h1>
+            </div>
+            <div class="top-actions">
+                <span id="live-indicator" class="live-indicator" title="Letztes Update">
+                    <span class="live-dot"></span><span id="live-text">–</span>
+                </span>
                 <a href="/settings" style="text-decoration:none;">
-                    <button type="button" style="background: var(--secondary-color); color: var(--text-color); padding: 8px 16px; font-size: 0.85rem;">Einstellungen</button>
+                    <button type="button" class="btn-ghost">Einstellungen</button>
                 </a>
-                <button id="logout-btn" type="button" style="background: var(--secondary-color); color: var(--text-color); padding: 8px 16px; font-size: 0.85rem;">Abmelden</button>
+                <button id="logout-btn" type="button" class="btn-ghost">Abmelden</button>
             </div>
         </div>
 
         {% if not zone_configured %}
-        <div class="card" style="border-left: 4px solid var(--danger-color); text-align:left;">
+        <div class="card banner banner-danger">
             <strong>⚠️ Cloudflare nicht konfiguriert</strong>
-            <p style="font-size: 0.9rem; margin-top: 4px; opacity: 0.8;">Bitte CLOUDFLARE_API_TOKEN und CLOUDFLARE_ZONE_ID in der .env setzen.</p>
+            <p>Bitte <code>CLOUDFLARE_API_TOKEN</code> und <code>CLOUDFLARE_ZONE_ID</code> in der .env setzen, damit Analytics-Daten abgerufen werden können.</p>
         </div>
         {% endif %}
+
+        <div class="card banner banner-warning" id="collector-error-banner" style="display:none;">
+            <strong>⚠️ Letzter Collector-Lauf fehlgeschlagen</strong>
+            <p id="collector-error-text"></p>
+        </div>
 
         <!-- Summary Cards -->
         <div class="summary-grid">
@@ -62,11 +73,14 @@
 
         {% if feature_quick_actions %}
         <div class="card" style="text-align:left;">
-            <h3 style="margin-bottom: 1rem;">Quick Actions</h3>
+            <h3 class="card-title">Quick Actions</h3>
             <div class="actions-grid">
                 {% if feature_dev_mode_toggle %}
                 <div class="action-item">
-                    <span>Development Mode</span>
+                    <div>
+                        <span class="action-title">Development Mode</span>
+                        <span class="action-desc">Deaktiviert Caching temporär für Live-Debugging</span>
+                    </div>
                     <label class="switch">
                         <input type="checkbox" id="toggle-dev-mode">
                         <span class="slider"></span>
@@ -75,7 +89,10 @@
                 {% endif %}
                 {% if feature_under_attack_toggle %}
                 <div class="action-item">
-                    <span>Under Attack Mode</span>
+                    <div>
+                        <span class="action-title">Under Attack Mode</span>
+                        <span class="action-desc">Zeigt allen Besuchern eine JS-Challenge vor Zugriff</span>
+                    </div>
                     <label class="switch">
                         <input type="checkbox" id="toggle-under-attack">
                         <span class="slider"></span>
@@ -84,46 +101,73 @@
                 {% endif %}
                 {% if feature_purge_cache %}
                 <div class="action-item">
-                    <span>Cache leeren</span>
-                    <button id="btn-purge-cache" type="button" style="padding: 6px 14px; font-size: 0.85rem;">Purge</button>
+                    <div>
+                        <span class="action-title">Cache leeren</span>
+                        <span class="action-desc">Löscht den gesamten Edge-Cache dieser Zone</span>
+                    </div>
+                    <button id="btn-purge-cache" type="button" class="btn-small">Purge</button>
                 </div>
                 {% endif %}
             </div>
-            <p id="action-feedback" style="font-size: 0.8rem; margin-top: 0.75rem; min-height: 1.2em;"></p>
+            <p id="action-feedback" class="feedback-text"></p>
+        </div>
+        {% endif %}
+
+        {% if feature_requests_chart or feature_bandwidth_chart or feature_cache_ratio_chart or feature_threats_chart %}
+        <div class="range-selector" id="range-selector">
+            <button type="button" class="range-btn" data-range="6h">6h</button>
+            <button type="button" class="range-btn active" data-range="24h">24h</button>
+            <button type="button" class="range-btn" data-range="7d">7T</button>
+            <button type="button" class="range-btn" data-range="30d">30T</button>
+            <button type="button" class="range-btn" data-range="90d">90T</button>
+            <button type="button" class="range-btn" data-range="1y">1J</button>
         </div>
         {% endif %}
 
         {% if feature_requests_chart %}
-        <div class="card" style="text-align:left;">
-            <h3 style="margin-bottom: 1rem;">Requests</h3>
-            <canvas id="chart-requests" height="90"></canvas>
+        <div class="card chart-card" style="text-align:left;">
+            <h3 class="card-title">Requests</h3>
+            <div class="chart-wrap"><canvas id="chart-requests"></canvas></div>
+            <p class="chart-empty" id="chart-requests-empty" style="display:none;">Noch keine Daten für diesen Zeitraum</p>
         </div>
         {% endif %}
 
-        {% if feature_bandwidth_chart %}
-        <div class="card" style="text-align:left;">
-            <h3 style="margin-bottom: 1rem;">Bandbreite (MB)</h3>
-            <canvas id="chart-bandwidth" height="90"></canvas>
+        <div class="chart-row">
+            {% if feature_bandwidth_chart %}
+            <div class="card chart-card chart-card-half" style="text-align:left;">
+                <h3 class="card-title">Bandbreite (MB)</h3>
+                <div class="chart-wrap"><canvas id="chart-bandwidth"></canvas></div>
+                <p class="chart-empty" id="chart-bandwidth-empty" style="display:none;">Noch keine Daten für diesen Zeitraum</p>
+            </div>
+            {% endif %}
+
+            {% if feature_cache_ratio_chart %}
+            <div class="card chart-card chart-card-half" style="text-align:left;">
+                <h3 class="card-title">Cache-Ratio</h3>
+                <div class="chart-wrap"><canvas id="chart-cache-ratio"></canvas></div>
+                <p class="chart-empty" id="chart-cache-ratio-empty" style="display:none;">Noch keine Daten für diesen Zeitraum</p>
+            </div>
+            {% endif %}
         </div>
-        {% endif %}
 
         {% if feature_threats_chart %}
-        <div class="card" style="text-align:left;">
-            <h3 style="margin-bottom: 1rem;">Threats</h3>
-            <canvas id="chart-threats" height="90"></canvas>
+        <div class="card chart-card" style="text-align:left;">
+            <h3 class="card-title">Threats</h3>
+            <div class="chart-wrap"><canvas id="chart-threats"></canvas></div>
+            <p class="chart-empty" id="chart-threats-empty" style="display:none;">Noch keine Daten für diesen Zeitraum</p>
         </div>
         {% endif %}
 
         {% if feature_security_feed %}
         <div class="card" style="text-align:left;">
-            <h3 style="margin-bottom: 1rem;">Security-Feed</h3>
+            <h3 class="card-title">Security-Feed</h3>
             <div style="overflow-x:auto;">
                 <table class="feed-table" id="security-feed-table">
                     <thead>
                         <tr><th>Zeit</th><th>IP</th><th>Land</th><th>Aktion</th><th>Pfad</th></tr>
                     </thead>
                     <tbody id="security-feed-body">
-                        <tr><td colspan="5" style="opacity:0.6;">Lade Daten...</td></tr>
+                        <tr><td colspan="5" class="feed-empty">Lade Daten...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -132,12 +176,37 @@
     </div>
 
     <style>
-        .summary-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        .top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
             gap: 0.75rem;
-            margin-bottom: 1rem;
         }
+        .brand-row { display: flex; align-items: center; gap: 0.6rem; }
+        .brand-row h1 { font-size: 1.7rem; text-align:left; margin: 0; }
+        .brand-dot {
+            width: 10px; height: 10px; border-radius: 50%;
+            background: var(--highlight-color);
+            box-shadow: 0 0 8px var(--highlight-color);
+        }
+        .top-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+        .live-indicator {
+            display: inline-flex; align-items: center; gap: 6px;
+            font-size: 0.75rem; opacity: 0.65; margin-right: 0.25rem;
+        }
+        .live-dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: #4caf50;
+        }
+        .btn-ghost {
+            background: var(--secondary-color);
+            color: var(--text-color);
+            padding: 8px 16px;
+            font-size: 0.85rem;
+        }
+        .btn-small { padding: 6px 14px; font-size: 0.82rem; }
         .card {
             background: var(--container-bg);
             border: 1px solid var(--border-color);
@@ -145,30 +214,69 @@
             padding: 1rem 1.25rem;
             margin-bottom: 1rem;
         }
+        .card-title { margin-bottom: 1rem; font-size: 1rem; font-weight: 600; }
+        .banner { text-align: left; border-left: 4px solid var(--border-color); }
+        .banner p { font-size: 0.85rem; margin-top: 4px; opacity: 0.8; }
+        .banner-danger { border-left-color: var(--danger-color); }
+        .banner-warning { border-left-color: #f0a020; }
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
         .summary-card { display: flex; flex-direction: column; gap: 4px; }
         .summary-label { font-size: 0.75rem; opacity: 0.65; text-transform: uppercase; letter-spacing: 0.03em; }
         .summary-value { font-size: 1.5rem; font-weight: 700; color: var(--highlight-color); }
-        .actions-grid { display: flex; flex-direction: column; gap: 0.75rem; }
-        .action-item { display: flex; align-items: center; justify-content: space-between; }
-        .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .actions-grid { display: flex; flex-direction: column; gap: 0.85rem; }
+        .action-item { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+        .action-title { display: block; font-size: 0.92rem; }
+        .action-desc { display: block; font-size: 0.75rem; opacity: 0.6; margin-top: 2px; }
+        .feedback-text { font-size: 0.8rem; margin-top: 0.75rem; min-height: 1.2em; }
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
         .switch input { opacity: 0; width: 0; height: 0; }
         .slider { position: absolute; cursor: pointer; top:0; left:0; right:0; bottom:0; background-color: var(--secondary-color); transition: .3s; border-radius: 24px; }
         .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
         input:checked + .slider { background-color: var(--highlight-color); }
         input:checked + .slider:before { transform: translateX(20px); }
+        .range-selector { display: flex; gap: 6px; margin-bottom: 1rem; flex-wrap: wrap; }
+        .range-btn {
+            background: var(--container-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-color);
+            padding: 6px 14px;
+            font-size: 0.8rem;
+            border-radius: 6px;
+        }
+        .range-btn:hover:not(:disabled) { background: var(--secondary-color); transform: none; }
+        .range-btn.active { background: var(--highlight-color); border-color: var(--highlight-color); color: white; }
+        .chart-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        @media (max-width: 640px) { .chart-row { grid-template-columns: 1fr; } }
+        .chart-card-half { margin-bottom: 0; }
+        .chart-wrap { position: relative; height: 220px; }
+        .chart-empty { text-align: center; opacity: 0.5; font-size: 0.85rem; padding: 2rem 0; }
         .feed-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
         .feed-table th, .feed-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border-color); }
         .feed-table th { opacity: 0.65; font-weight: 600; text-transform: uppercase; font-size: 0.7rem; }
+        .feed-empty { opacity: 0.6; text-align: center; padding: 1.5rem 0 !important; }
+        .action-badge {
+            display: inline-block; padding: 2px 8px; border-radius: 4px;
+            font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+        }
+        .action-badge.block { background: rgba(244,67,54,0.18); color: #f44336; }
+        .action-badge.challenge, .action-badge.jschallenge { background: rgba(240,160,32,0.18); color: #f0a020; }
+        .action-badge.default { background: rgba(128,128,128,0.18); color: #999; }
     </style>
 
     <script>
         const AUTO_REFRESH_SECONDS = {{ auto_refresh_seconds }};
+        let currentRange = '24h';
 
         // --- Theme Toggle ---
-        const themeToggle = document.getElementById('theme-toggle');
         document.getElementById('theme-toggle').addEventListener('click', () => {
             const html = document.documentElement;
             html.setAttribute('data-theme', html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+            loadTimeseries(); // Chart-Textfarben neu anwenden
         });
 
         document.getElementById('logout-btn').addEventListener('click', async () => {
@@ -180,6 +288,16 @@
             return new Intl.NumberFormat('de-DE').format(n);
         }
 
+        function fmtRelativeTime(isoString) {
+            if (!isoString) return 'keine Daten';
+            const diffMs = Date.now() - new Date(isoString + 'Z').getTime();
+            const diffMin = Math.round(diffMs / 60000);
+            if (diffMin < 1) return 'gerade eben';
+            if (diffMin < 60) return `vor ${diffMin} Min.`;
+            const diffH = Math.round(diffMin / 60);
+            return `vor ${diffH} Std.`;
+        }
+
         async function loadSummary() {
             const res = await fetch('/api/analytics/summary');
             if (!res.ok) return;
@@ -188,73 +306,144 @@
             document.getElementById('stat-cache-ratio').textContent = data.cache_ratio_pct + '%';
             document.getElementById('stat-bandwidth').textContent = fmtNumber(data.bandwidth_24h_mb) + ' MB';
             document.getElementById('stat-threats').textContent = fmtNumber(data.threats_24h);
+            document.getElementById('live-text').textContent = fmtRelativeTime(data.last_updated);
         }
 
-        let chartRequests, chartBandwidth, chartThreats;
-        const chartColors = { primary: '#FF5E1F', secondary: '#999' };
+        async function loadCollectorStatus() {
+            const res = await fetch('/api/collector/status');
+            if (!res.ok) return;
+            const data = await res.json();
+            const banner = document.getElementById('collector-error-banner');
+            const text = document.getElementById('collector-error-text');
+            if (data.last_run && !data.last_run.success) {
+                text.textContent = data.last_run.message || 'Unbekannter Fehler';
+                banner.style.display = 'block';
+            } else {
+                banner.style.display = 'none';
+            }
+        }
+
+        let chartRequests, chartBandwidth, chartThreats, chartCacheRatio;
+        const chartColors = { primary: '#FF5E1F', secondary: '#999', good: '#4caf50', danger: '#f44336' };
 
         function chartOptions(extra = {}) {
+            const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-color').trim() || '#888';
             return Object.assign({
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { labels: { color: getComputedStyle(document.documentElement).getPropertyValue('--text-color') } } },
+                plugins: { legend: { labels: { color: textColor, boxWidth: 12, font: { size: 11 } } } },
                 scales: {
-                    x: { ticks: { color: '#888', maxTicksLimit: 8 }, grid: { display: false } },
-                    y: { ticks: { color: '#888' }, grid: { color: 'rgba(128,128,128,0.15)' } }
+                    x: { ticks: { color: '#888', maxTicksLimit: 7, font: { size: 10 } }, grid: { display: false } },
+                    y: { ticks: { color: '#888', font: { size: 10 } }, grid: { color: 'rgba(128,128,128,0.15)' } }
                 }
             }, extra);
         }
 
+        function toggleEmpty(canvasId, isEmpty) {
+            const canvas = document.getElementById(canvasId);
+            const empty = document.getElementById(canvasId + '-empty');
+            if (!canvas) return;
+            canvas.style.display = isEmpty ? 'none' : 'block';
+            if (empty) empty.style.display = isEmpty ? 'block' : 'none';
+        }
+
         async function loadTimeseries() {
-            const res = await fetch('/api/analytics/timeseries?hours=24');
+            const res = await fetch(`/api/analytics/timeseries?range=${currentRange}`);
             if (!res.ok) return;
             const data = await res.json();
+            const hasData = data.labels && data.labels.length > 0;
 
             const reqCanvas = document.getElementById('chart-requests');
             if (reqCanvas) {
+                toggleEmpty('chart-requests', !hasData);
                 if (chartRequests) chartRequests.destroy();
-                chartRequests = new Chart(reqCanvas, {
-                    type: 'line',
-                    data: {
-                        labels: data.labels,
-                        datasets: [
-                            { label: 'Total', data: data.requests_total, borderColor: chartColors.primary, backgroundColor: 'rgba(255,94,31,0.1)', fill: true, tension: 0.3 },
-                            { label: 'Cached', data: data.requests_cached, borderColor: chartColors.secondary, tension: 0.3 }
-                        ]
-                    },
-                    options: chartOptions()
-                });
+                if (hasData) {
+                    chartRequests = new Chart(reqCanvas, {
+                        type: 'line',
+                        data: {
+                            labels: data.labels,
+                            datasets: [
+                                { label: 'Total', data: data.requests_total, borderColor: chartColors.primary, backgroundColor: 'rgba(255,94,31,0.1)', fill: true, tension: 0.3, pointRadius: 0 },
+                                { label: 'Cached', data: data.requests_cached, borderColor: chartColors.secondary, tension: 0.3, pointRadius: 0 }
+                            ]
+                        },
+                        options: chartOptions()
+                    });
+                }
             }
 
             const bwCanvas = document.getElementById('chart-bandwidth');
             if (bwCanvas) {
+                toggleEmpty('chart-bandwidth', !hasData);
                 if (chartBandwidth) chartBandwidth.destroy();
-                chartBandwidth = new Chart(bwCanvas, {
-                    type: 'line',
-                    data: {
-                        labels: data.labels,
-                        datasets: [
-                            { label: 'Bandbreite (MB)', data: data.bandwidth_total_mb, borderColor: chartColors.primary, backgroundColor: 'rgba(255,94,31,0.1)', fill: true, tension: 0.3 }
-                        ]
-                    },
-                    options: chartOptions()
-                });
+                if (hasData) {
+                    chartBandwidth = new Chart(bwCanvas, {
+                        type: 'line',
+                        data: {
+                            labels: data.labels,
+                            datasets: [
+                                { label: 'Bandbreite (MB)', data: data.bandwidth_total_mb, borderColor: chartColors.primary, backgroundColor: 'rgba(255,94,31,0.1)', fill: true, tension: 0.3, pointRadius: 0 }
+                            ]
+                        },
+                        options: chartOptions()
+                    });
+                }
+            }
+
+            const cacheCanvas = document.getElementById('chart-cache-ratio');
+            if (cacheCanvas) {
+                toggleEmpty('chart-cache-ratio', !hasData);
+                if (chartCacheRatio) chartCacheRatio.destroy();
+                if (hasData) {
+                    const ratios = data.requests_total.map((total, i) =>
+                        total > 0 ? Math.round((data.requests_cached[i] / total) * 1000) / 10 : 0
+                    );
+                    chartCacheRatio = new Chart(cacheCanvas, {
+                        type: 'line',
+                        data: {
+                            labels: data.labels,
+                            datasets: [
+                                { label: 'Cache-Ratio (%)', data: ratios, borderColor: chartColors.good, backgroundColor: 'rgba(76,175,80,0.1)', fill: true, tension: 0.3, pointRadius: 0 }
+                            ]
+                        },
+                        options: chartOptions({ scales: { y: { min: 0, max: 100, ticks: { color: '#888', font: { size: 10 } }, grid: { color: 'rgba(128,128,128,0.15)' } }, x: { ticks: { color: '#888', maxTicksLimit: 7, font: { size: 10 } }, grid: { display: false } } } })
+                    });
+                }
             }
 
             const threatsCanvas = document.getElementById('chart-threats');
             if (threatsCanvas) {
+                toggleEmpty('chart-threats', !hasData);
                 if (chartThreats) chartThreats.destroy();
-                chartThreats = new Chart(threatsCanvas, {
-                    type: 'bar',
-                    data: {
-                        labels: data.labels,
-                        datasets: [
-                            { label: 'Threats', data: data.threats_total, backgroundColor: 'rgba(244,67,54,0.6)' }
-                        ]
-                    },
-                    options: chartOptions()
-                });
+                if (hasData) {
+                    chartThreats = new Chart(threatsCanvas, {
+                        type: 'bar',
+                        data: {
+                            labels: data.labels,
+                            datasets: [
+                                { label: 'Threats', data: data.threats_total, backgroundColor: 'rgba(244,67,54,0.6)' }
+                            ]
+                        },
+                        options: chartOptions()
+                    });
+                }
             }
+        }
+
+        document.querySelectorAll('.range-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentRange = btn.dataset.range;
+                loadTimeseries();
+            });
+        });
+
+        function actionBadgeClass(action) {
+            const a = (action || '').toLowerCase();
+            if (a === 'block') return 'block';
+            if (a.includes('challenge')) return 'challenge';
+            return 'default';
         }
 
         async function loadSecurityFeed() {
@@ -264,7 +453,7 @@
             if (!res.ok) return;
             const events = await res.json();
             if (!events.length) {
-                body.innerHTML = '<tr><td colspan="5" style="opacity:0.6;">Keine Ereignisse im gewählten Zeitraum</td></tr>';
+                body.innerHTML = '<tr><td colspan="5" class="feed-empty">Keine Ereignisse im gewählten Zeitraum</td></tr>';
                 return;
             }
             body.innerHTML = events.map(e => `
@@ -272,7 +461,7 @@
                     <td>${new Date(e.timestamp).toLocaleString('de-DE')}</td>
                     <td>${e.client_ip || '–'}</td>
                     <td>${e.country || '–'}</td>
-                    <td>${e.action || '–'}</td>
+                    <td><span class="action-badge ${actionBadgeClass(e.action)}">${e.action || '–'}</span></td>
                     <td style="max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${e.path || '–'}</td>
                 </tr>
             `).join('');
@@ -340,7 +529,7 @@
         });
 
         async function refreshAll() {
-            await Promise.all([loadSummary(), loadTimeseries(), loadSecurityFeed(), loadZoneStatus()]);
+            await Promise.all([loadSummary(), loadTimeseries(), loadSecurityFeed(), loadZoneStatus(), loadCollectorStatus()]);
         }
 
         refreshAll();

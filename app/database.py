@@ -1,9 +1,18 @@
 """
 FlareHub – Datenbank-Setup (SQLite via SQLAlchemy).
+
+Datenmodell / Aufbewahrungsstrategie:
+- AnalyticsSnapshot: Rohdaten in COLLECTOR_INTERVAL_MINUTES-Auflösung (z.B. alle 10 Min).
+  Werden nach RAW_RETENTION_HOURS zu AnalyticsHourly verdichtet und danach gelöscht.
+- AnalyticsHourly: Stunden-Rollups. Werden nach HOURLY_RETENTION_DAYS zu AnalyticsDaily
+  verdichtet und danach gelöscht.
+- AnalyticsDaily: Tages-Rollups, bleiben DATA_RETENTION_DAYS lang erhalten (Langzeitverlauf,
+  sehr kompakt: 1 Zeile pro Tag).
+Damit bleibt die DB auch nach Jahren im Betrieb klein, ohne dass der Langzeit-Trend verloren geht.
 """
 from datetime import datetime, timedelta
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Boolean, Text
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, Boolean, Text, func
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from app.config import settings
@@ -17,7 +26,7 @@ Base = declarative_base()
 
 
 class AnalyticsSnapshot(Base):
-    """Ein Datenpunkt der Zonen-Analytics für einen Zeitraum (jeweils COLLECTOR_INTERVAL_MINUTES)."""
+    """Rohdaten-Datenpunkt in COLLECTOR_INTERVAL_MINUTES-Auflösung."""
     __tablename__ = "analytics_snapshots"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -31,6 +40,41 @@ class AnalyticsSnapshot(Base):
     threats_total = Column(Integer, default=0)
     page_views = Column(Integer, default=0)
     unique_visitors = Column(Integer, default=0)
+
+
+class AnalyticsHourly(Base):
+    """Stunden-Rollup. unique_visitors ist ein Max-über-Stunde-Näherungswert (kein echtes
+    Distinct-Merge möglich, da Cloudflare nur bereits aggregierte uniques liefert)."""
+    __tablename__ = "analytics_hourly"
+
+    id = Column(Integer, primary_key=True, index=True)
+    hour_start = Column(DateTime, index=True, unique=True)
+    requests_total = Column(Integer, default=0)
+    requests_cached = Column(Integer, default=0)
+    requests_uncached = Column(Integer, default=0)
+    bandwidth_total_bytes = Column(Integer, default=0)
+    bandwidth_cached_bytes = Column(Integer, default=0)
+    bandwidth_uncached_bytes = Column(Integer, default=0)
+    threats_total = Column(Integer, default=0)
+    page_views = Column(Integer, default=0)
+    unique_visitors_max = Column(Integer, default=0)
+
+
+class AnalyticsDaily(Base):
+    """Tages-Rollup für Langzeitverlauf, sehr kompakt."""
+    __tablename__ = "analytics_daily"
+
+    id = Column(Integer, primary_key=True, index=True)
+    day = Column(DateTime, index=True, unique=True)  # 00:00 UTC des Tages
+    requests_total = Column(Integer, default=0)
+    requests_cached = Column(Integer, default=0)
+    requests_uncached = Column(Integer, default=0)
+    bandwidth_total_bytes = Column(Integer, default=0)
+    bandwidth_cached_bytes = Column(Integer, default=0)
+    bandwidth_uncached_bytes = Column(Integer, default=0)
+    threats_total = Column(Integer, default=0)
+    page_views = Column(Integer, default=0)
+    unique_visitors_max = Column(Integer, default=0)
 
 
 class ThreatEvent(Base):
@@ -82,6 +126,18 @@ class LoginAttempt(Base):
     ip_address = Column(String, nullable=True)
 
 
+class CollectorRun(Base):
+    """Log der Collector-Läufe, für Diagnose im UI (letzter Lauf, Fehler, Dauer)."""
+    __tablename__ = "collector_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    success = Column(Boolean, default=True)
+    message = Column(Text, nullable=True)
+    duration_ms = Column(Integer, default=0)
+    records_fetched = Column(Integer, default=0)
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 
@@ -94,9 +150,144 @@ def get_db():
         db.close()
 
 
-def cleanup_old_data(db, retention_days: int):
-    """Löscht Analytics-Snapshots und Threat-Events älter als retention_days."""
-    cutoff = datetime.utcnow() - timedelta(days=retention_days)
-    db.query(AnalyticsSnapshot).filter(AnalyticsSnapshot.timestamp < cutoff).delete()
-    db.query(ThreatEvent).filter(ThreatEvent.timestamp < cutoff).delete()
+def _hour_floor(dt: datetime) -> datetime:
+    return dt.replace(minute=0, second=0, microsecond=0)
+
+
+def _day_floor(dt: datetime) -> datetime:
+    return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def rollup_raw_to_hourly(db, older_than_hours: int):
+    """Verdichtet AnalyticsSnapshot-Zeilen älter als older_than_hours zu AnalyticsHourly
+    und löscht danach die verdichteten Rohdaten."""
+    cutoff = datetime.utcnow() - timedelta(hours=older_than_hours)
+    rows = (
+        db.query(AnalyticsSnapshot)
+        .filter(AnalyticsSnapshot.timestamp < cutoff)
+        .order_by(AnalyticsSnapshot.timestamp.asc())
+        .all()
+    )
+    if not rows:
+        return 0
+
+    buckets: dict[datetime, dict] = {}
+    for r in rows:
+        hour = _hour_floor(r.timestamp)
+        b = buckets.setdefault(hour, {
+            "requests_total": 0, "requests_cached": 0, "requests_uncached": 0,
+            "bandwidth_total_bytes": 0, "bandwidth_cached_bytes": 0, "bandwidth_uncached_bytes": 0,
+            "threats_total": 0, "page_views": 0, "unique_visitors_max": 0,
+        })
+        b["requests_total"] += r.requests_total
+        b["requests_cached"] += r.requests_cached
+        b["requests_uncached"] += r.requests_uncached
+        b["bandwidth_total_bytes"] += r.bandwidth_total_bytes
+        b["bandwidth_cached_bytes"] += r.bandwidth_cached_bytes
+        b["bandwidth_uncached_bytes"] += r.bandwidth_uncached_bytes
+        b["threats_total"] += r.threats_total
+        b["page_views"] += r.page_views
+        b["unique_visitors_max"] = max(b["unique_visitors_max"], r.unique_visitors)
+
+    for hour, agg in buckets.items():
+        existing = db.query(AnalyticsHourly).filter_by(hour_start=hour).first()
+        if existing:
+            existing.requests_total += agg["requests_total"]
+            existing.requests_cached += agg["requests_cached"]
+            existing.requests_uncached += agg["requests_uncached"]
+            existing.bandwidth_total_bytes += agg["bandwidth_total_bytes"]
+            existing.bandwidth_cached_bytes += agg["bandwidth_cached_bytes"]
+            existing.bandwidth_uncached_bytes += agg["bandwidth_uncached_bytes"]
+            existing.threats_total += agg["threats_total"]
+            existing.page_views += agg["page_views"]
+            existing.unique_visitors_max = max(existing.unique_visitors_max, agg["unique_visitors_max"])
+        else:
+            db.add(AnalyticsHourly(hour_start=hour, **agg))
+
+    ids = [r.id for r in rows]
+    db.query(AnalyticsSnapshot).filter(AnalyticsSnapshot.id.in_(ids)).delete(synchronize_session=False)
     db.commit()
+    return len(rows)
+
+
+def rollup_hourly_to_daily(db, older_than_days: int):
+    """Verdichtet AnalyticsHourly-Zeilen älter als older_than_days zu AnalyticsDaily
+    und löscht danach die verdichteten Stunden-Rollups."""
+    cutoff = datetime.utcnow() - timedelta(days=older_than_days)
+    rows = (
+        db.query(AnalyticsHourly)
+        .filter(AnalyticsHourly.hour_start < cutoff)
+        .order_by(AnalyticsHourly.hour_start.asc())
+        .all()
+    )
+    if not rows:
+        return 0
+
+    buckets: dict[datetime, dict] = {}
+    for r in rows:
+        day = _day_floor(r.hour_start)
+        b = buckets.setdefault(day, {
+            "requests_total": 0, "requests_cached": 0, "requests_uncached": 0,
+            "bandwidth_total_bytes": 0, "bandwidth_cached_bytes": 0, "bandwidth_uncached_bytes": 0,
+            "threats_total": 0, "page_views": 0, "unique_visitors_max": 0,
+        })
+        b["requests_total"] += r.requests_total
+        b["requests_cached"] += r.requests_cached
+        b["requests_uncached"] += r.requests_uncached
+        b["bandwidth_total_bytes"] += r.bandwidth_total_bytes
+        b["bandwidth_cached_bytes"] += r.bandwidth_cached_bytes
+        b["bandwidth_uncached_bytes"] += r.bandwidth_uncached_bytes
+        b["threats_total"] += r.threats_total
+        b["page_views"] += r.page_views
+        b["unique_visitors_max"] = max(b["unique_visitors_max"], r.unique_visitors_max)
+
+    for day, agg in buckets.items():
+        existing = db.query(AnalyticsDaily).filter_by(day=day).first()
+        if existing:
+            existing.requests_total += agg["requests_total"]
+            existing.requests_cached += agg["requests_cached"]
+            existing.requests_uncached += agg["requests_uncached"]
+            existing.bandwidth_total_bytes += agg["bandwidth_total_bytes"]
+            existing.bandwidth_cached_bytes += agg["bandwidth_cached_bytes"]
+            existing.bandwidth_uncached_bytes += agg["bandwidth_uncached_bytes"]
+            existing.threats_total += agg["threats_total"]
+            existing.page_views += agg["page_views"]
+            existing.unique_visitors_max = max(existing.unique_visitors_max, agg["unique_visitors_max"])
+        else:
+            db.add(AnalyticsDaily(day=day, **agg))
+
+    ids = [r.id for r in rows]
+    db.query(AnalyticsHourly).filter(AnalyticsHourly.id.in_(ids)).delete(synchronize_session=False)
+    db.commit()
+    return len(rows)
+
+
+def cleanup_old_data(db):
+    """Führt die komplette Aufbewahrungs-Pipeline aus: Rohdaten -> Stunden -> Tage,
+    und löscht sehr alte Tages-Rollups sowie abgelaufene Threat-Events/Login-Versuche."""
+    rollup_raw_to_hourly(db, settings.RAW_RETENTION_HOURS)
+    rollup_hourly_to_daily(db, settings.HOURLY_RETENTION_DAYS)
+
+    daily_cutoff = datetime.utcnow() - timedelta(days=settings.DATA_RETENTION_DAYS)
+    db.query(AnalyticsDaily).filter(AnalyticsDaily.day < daily_cutoff).delete()
+
+    threat_cutoff = datetime.utcnow() - timedelta(days=settings.THREAT_EVENT_RETENTION_DAYS)
+    db.query(ThreatEvent).filter(ThreatEvent.timestamp < threat_cutoff).delete()
+
+    login_cutoff = datetime.utcnow() - timedelta(days=7)
+    db.query(LoginAttempt).filter(LoginAttempt.timestamp < login_cutoff).delete()
+
+    collector_run_cutoff = datetime.utcnow() - timedelta(days=14)
+    db.query(CollectorRun).filter(CollectorRun.timestamp < collector_run_cutoff).delete()
+
+    db.commit()
+
+
+def get_storage_stats(db) -> dict:
+    """Zeilenzahlen je Tabelle für die Anzeige im UI (Settings-Seite)."""
+    return {
+        "raw_snapshots": db.query(func.count(AnalyticsSnapshot.id)).scalar() or 0,
+        "hourly_rollups": db.query(func.count(AnalyticsHourly.id)).scalar() or 0,
+        "daily_rollups": db.query(func.count(AnalyticsDaily.id)).scalar() or 0,
+        "threat_events": db.query(func.count(ThreatEvent.id)).scalar() or 0,
+    }

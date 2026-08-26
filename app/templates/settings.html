@@ -33,7 +33,24 @@
             <strong>⚠️ Kein Admin-Token konfiguriert</strong>
             <p style="font-size: 0.9rem; margin-top: 4px; opacity: 0.8;">Bitte <code>ADMIN_TOKEN</code> in der .env setzen, um die Passkey-Verwaltung freizuschalten.</p>
         </div>
-        {% else %}
+        {% endif %}
+
+        <!-- System & Datenspeicher (keine Admin-Freischaltung nötig) -->
+        <div class="card" style="text-align:left;">
+            <h3 style="margin-bottom: 1rem;">System &amp; Datenspeicher</h3>
+            <div id="storage-stats-container">
+                <p style="opacity:0.6; font-size:0.9rem;">Lade Statistik...</p>
+            </div>
+            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
+                <div>
+                    <span style="font-size: 0.85rem;">Letzter Collector-Lauf: <strong id="collector-last-run">–</strong></span>
+                    <p id="collector-last-message" style="font-size: 0.78rem; opacity: 0.65; margin-top: 2px;"></p>
+                </div>
+                <button id="btn-run-collector" type="button" class="btn-small">Jetzt ausführen</button>
+            </div>
+        </div>
+
+        {% if admin_token_configured %}
 
         <!-- Admin-Token-Gate -->
         <div class="card" id="admin-gate-card" style="text-align:left;">
@@ -93,6 +110,23 @@
             font-size: 0.8rem;
         }
         .btn-danger:hover { background: #d32f2f; }
+        .btn-small { padding: 6px 14px; font-size: 0.82rem; }
+        .storage-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+            gap: 0.75rem;
+        }
+        .storage-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding: 0.75rem;
+            background: var(--bg-color);
+            border-radius: 8px;
+            text-align: center;
+        }
+        .storage-value { font-size: 1.4rem; font-weight: 700; color: var(--highlight-color); }
+        .storage-label { font-size: 0.72rem; opacity: 0.65; line-height: 1.3; }
     </style>
 
     <script>
@@ -100,6 +134,77 @@
             const html = document.documentElement;
             html.setAttribute('data-theme', html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
         });
+
+        function fmtRelativeTime(isoString) {
+            if (!isoString) return 'noch nie';
+            const diffMs = Date.now() - new Date(isoString + 'Z').getTime();
+            const diffMin = Math.round(diffMs / 60000);
+            if (diffMin < 1) return 'gerade eben';
+            if (diffMin < 60) return `vor ${diffMin} Min.`;
+            const diffH = Math.round(diffMin / 60);
+            return `vor ${diffH} Std.`;
+        }
+
+        async function loadStorageStats() {
+            const container = document.getElementById('storage-stats-container');
+            const res = await fetch('/api/collector/status');
+            if (!res.ok) {
+                container.innerHTML = '<p style="opacity:0.6; font-size:0.9rem;">Konnte Statistik nicht laden.</p>';
+                return;
+            }
+            const data = await res.json();
+            const s = data.storage;
+            container.innerHTML = `
+                <div class="storage-grid">
+                    <div class="storage-item">
+                        <span class="storage-value">${s.raw_snapshots}</span>
+                        <span class="storage-label">Rohdatenpunkte<br><span style="opacity:0.6;">(10-Min-Auflösung)</span></span>
+                    </div>
+                    <div class="storage-item">
+                        <span class="storage-value">${s.hourly_rollups}</span>
+                        <span class="storage-label">Stunden-Rollups</span>
+                    </div>
+                    <div class="storage-item">
+                        <span class="storage-value">${s.daily_rollups}</span>
+                        <span class="storage-label">Tages-Rollups<br><span style="opacity:0.6;">(Langzeitverlauf)</span></span>
+                    </div>
+                    <div class="storage-item">
+                        <span class="storage-value">${s.threat_events}</span>
+                        <span class="storage-label">Security-Feed-Einträge</span>
+                    </div>
+                </div>
+                <p style="font-size: 0.78rem; opacity: 0.6; margin-top: 0.75rem;">
+                    Rohdaten werden automatisch zu Stunden- und Tages-Rollups verdichtet
+                    (siehe RAW_RETENTION_HOURS / HOURLY_RETENTION_DAYS / DATA_RETENTION_DAYS in der .env),
+                    damit die Datenbank auch über Jahre hinweg klein bleibt.
+                </p>
+            `;
+
+            const lastRunEl = document.getElementById('collector-last-run');
+            const lastMsgEl = document.getElementById('collector-last-message');
+            if (data.last_run) {
+                lastRunEl.textContent = fmtRelativeTime(data.last_run.timestamp) +
+                    (data.last_run.success ? ' · OK' : ' · Fehler');
+                lastRunEl.style.color = data.last_run.success ? 'var(--highlight-color)' : 'var(--danger-color)';
+                lastMsgEl.textContent = data.last_run.message || '';
+            } else {
+                lastRunEl.textContent = 'noch nie';
+            }
+        }
+
+        document.getElementById('btn-run-collector')?.addEventListener('click', async (e) => {
+            e.target.disabled = true;
+            e.target.textContent = 'Läuft...';
+            try {
+                await fetch('/api/collector/run-now', { method: 'POST' });
+                await loadStorageStats();
+            } finally {
+                e.target.disabled = false;
+                e.target.textContent = 'Jetzt ausführen';
+            }
+        });
+
+        loadStorageStats();
 
         const adminGateCard = document.getElementById('admin-gate-card');
         const managementCard = document.getElementById('passkey-management-card');

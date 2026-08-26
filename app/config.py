@@ -69,9 +69,19 @@ class Settings:
     # --- Collector ---
     COLLECTOR_INTERVAL_MINUTES: int = _int("COLLECTOR_INTERVAL_MINUTES", 10)
     COLLECTOR_RUN_ON_STARTUP: bool = _bool("COLLECTOR_RUN_ON_STARTUP", True)
-    DATA_RETENTION_DAYS: int = _int("DATA_RETENTION_DAYS", 90)
+    # Rohdaten (10-Minuten-Auflösung) werden nach dieser Zeit zu Stunden-Rollups verdichtet
+    RAW_RETENTION_HOURS: int = _int("RAW_RETENTION_HOURS", 48)
+    # Stunden-Rollups werden nach dieser Zeit zu Tages-Rollups verdichtet
+    HOURLY_RETENTION_DAYS: int = _int("HOURLY_RETENTION_DAYS", 30)
+    # Tages-Rollups (Langzeitverlauf) werden nach dieser Zeit gelöscht
+    DATA_RETENTION_DAYS: int = _int("DATA_RETENTION_DAYS", 730)
+    # Einzelne Threat-Events (Security-Feed) werden nach dieser Zeit gelöscht (Rohdaten, nicht aggregiert)
+    THREAT_EVENT_RETENTION_DAYS: int = _int("THREAT_EVENT_RETENTION_DAYS", 30)
     DATABASE_PATH: str = os.getenv("DATABASE_PATH", "/app/data/cloudflare.db")
-    CHART_DEFAULT_DATAPOINTS: int = _int("CHART_DEFAULT_DATAPOINTS", 144)
+    CHART_DEFAULT_DATAPOINTS: int = _int("CHART_DEFAULT_DATAPOINTS", 288)
+    # Max. Anzahl Records, die eine einzelne Cloudflare-GraphQL-Antwort umfassen darf
+    # (Cloudflare-Hardlimit: 10.000 pro Response)
+    COLLECTOR_MAX_RECORDS_PER_QUERY: int = _int("COLLECTOR_MAX_RECORDS_PER_QUERY", 500)
 
     # --- Feature Toggles ---
     FEATURE_REQUESTS_CHART: bool = _bool("FEATURE_REQUESTS_CHART", True)
