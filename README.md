@@ -59,24 +59,23 @@ Schlankes Cloudflare Analytics & Quick Actions Dashboard für Unraid/Docker.
 
 ## Sicherheit
 
-- **Sessions:** signiertes, HttpOnly-Cookie (`itsdangerous`). Standard ist ein reines
-  Browser-Session-Cookie ohne `Max-Age` (kein Auth-Cache auf der Platte); über
-  `SESSION_COOKIE_PERSISTENT=true` in der .env lässt sich eine längere Lebensdauer
-  (`SESSION_EXPIRY_HOURS`) aktivieren. `SESSION_COOKIE_SECURE=true` erzwingt HTTPS-only.
-- **Kein Browser-Caching:** Seiten & API-Antworten bekommen `Cache-Control: no-store`
-  (abschaltbar über `HTTP_CACHE_NO_STORE=false`); das Admin-Token-Grant ist ebenfalls
-  ein Session-Cookie.
+- **Keine Session-Cookies:** nach PIN-/Passkey-Login wird ein kurzlebiges, signiertes
+  Token ausgestellt, das nur im `sessionStorage` des Browsers lebt und als
+  `Authorization: Bearer`-Header mitgesendet wird. Beim Schließen des Browsers ist es
+  weg – **jeder neue Besuch erfordert einen erneuten PIN-/Passkey-Login**
+  (`SESSION_EXPIRY_HOURS` = oberes Limit, Standard 4 h).
+- **Admin-Token-Grant:** 10 Minuten gültig, nur im `sessionStorage` (`X-Admin-Grant`-Header),
+  nie auf der Platte. Passkey-Verwaltung ist damit doppelt geschützt.
 - **PIN-Lockout:** nach `AUTH_PIN_MAX_ATTEMPTS` Fehlversuchen je IP für
   `AUTH_PIN_LOCKOUT_SECONDS` Sekunden gesperrt; zusätzlich Rate-Limiting auf Login-Endpunkte.
-- **Passkey-Verwaltung:** zusätzlich zum Login durch ein `ADMIN_TOKEN` geschützt (10-Minuten-Grant),
-  unabhängig von der normalen Session.
-- **CSRF:** alle zustandsverändernden Requests werden per Origin-Check auf Same-Origin geprüft
-  (zusätzlich zum `SameSite=Lax`-Cookie).
-- **XSS:** alle Cloudflare-/Benutzereingaben (Security-Feed, Passkey-Namen) werden im Frontend
-  HTML-escaped.
-- **WebAuthn:** User-Verification wird konsistent erzwungen (`WEBAUTHN_USER_VERIFICATION=required`);
-  Challenges sind Einmal-Challenges. Ein Wechsel von `SESSION_SECRET_KEY` invalidiert alle Sessions
-  und ändert den abgeleiteten User-Handle für Passkeys.
+- **CSRF:** alle zustandsverändernden Requests werden per Origin-Check auf Same-Origin geprüft.
+- **Security-Header:** CSP (nur eigene Ressourcen), `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` (`SECURITY_HEADERS_ENABLED`).
+- **Kein Browser-Caching:** Seiten & APIs bekommen `Cache-Control: no-store` (`HTTP_CACHE_NO_STORE`).
+- **XSS:** alle Cloudflare-/Benutzereingaben werden escaped (Frontend + Jinja2-Autoescape).
+- **Docker läuft non-root** (UID 1001, einmalig `chown -R 1001:1001 data/`).
+- **Abhängigkeiten gepinnt + `pip-audit`-geprüft** (0 bekannte Schwachstellen).
+- Details: siehe [SECURITY.md](SECURITY.md) (vollständiges Audit, Restrisiken, Checkliste).
 
 ## Konfiguration
 
