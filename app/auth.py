@@ -264,7 +264,9 @@ def build_registration_options(db: Session, username: str = "admin"):
         authenticator_selection=AuthenticatorSelectionCriteria(**selection_kwargs),
     )
     _pending_challenges["register"] = options.challenge
-    return options_to_json(options)
+    # options_to_json liefert einen String; als Dict zurückgeben, damit
+    # JSONResponse im Router nicht doppelt encodiert.
+    return json.loads(options_to_json(options))
 
 
 def build_authentication_options(db: Session):
@@ -279,7 +281,8 @@ def build_authentication_options(db: Session):
         user_verification=_user_verification(),
     )
     _pending_challenges["auth"] = options.challenge
-    return options_to_json(options)
+    # siehe build_registration_options: Dict statt String zurückgeben
+    return json.loads(options_to_json(options))
 
 
 def verify_passkey_authentication(db: Session, credential_json: dict) -> tuple[bool, str]:
