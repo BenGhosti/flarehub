@@ -288,6 +288,12 @@
             return new Intl.NumberFormat('de-DE').format(n);
         }
 
+        function esc(s) {
+            return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[c]);
+        }
+
         function fmtRelativeTime(isoString) {
             if (!isoString) return 'keine Daten';
             const diffMs = Date.now() - new Date(isoString + 'Z').getTime();
@@ -459,10 +465,10 @@
             body.innerHTML = events.map(e => `
                 <tr>
                     <td>${new Date(e.timestamp).toLocaleString('de-DE')}</td>
-                    <td>${e.client_ip || '–'}</td>
-                    <td>${e.country || '–'}</td>
-                    <td><span class="action-badge ${actionBadgeClass(e.action)}">${e.action || '–'}</span></td>
-                    <td style="max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${e.path || '–'}</td>
+                    <td>${esc(e.client_ip) || '–'}</td>
+                    <td>${esc(e.country) || '–'}</td>
+                    <td><span class="action-badge ${actionBadgeClass(e.action)}">${esc(e.action) || '–'}</span></td>
+                    <td style="max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(e.path)}">${esc(e.path) || '–'}</td>
                 </tr>
             `).join('');
         }

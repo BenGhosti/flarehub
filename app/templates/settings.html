@@ -145,6 +145,12 @@
             return `vor ${diffH} Std.`;
         }
 
+        function esc(s) {
+            return String(s ?? '').replace(/[&<>"']/g, (c) => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[c]);
+        }
+
         async function loadStorageStats() {
             const container = document.getElementById('storage-stats-container');
             const res = await fetch('/api/collector/status');
@@ -260,7 +266,7 @@
             container.innerHTML = passkeys.map(p => `
                 <div class="passkey-row" data-id="${p.id}">
                     <div>
-                        <div>${p.nickname}</div>
+                        <div>${esc(p.nickname)}</div>
                         <div class="passkey-meta">
                             Erstellt: ${p.created_at ? new Date(p.created_at).toLocaleString('de-DE') : '–'}
                             ${p.last_used_at ? ' · Zuletzt genutzt: ' + new Date(p.last_used_at).toLocaleString('de-DE') : ' · Noch nicht genutzt'}
