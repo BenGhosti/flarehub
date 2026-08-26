@@ -15,6 +15,7 @@ Beachtete Cloudflare-Plattform-Limits (Stand: developers.cloudflare.com/analytic
   Ein 403/permission-Fehler von Cloudflare wird daher nicht als Bug behandelt, sondern
   im CollectorRun-Log als Plan-Limitierung protokolliert.
 """
+import asyncio
 import logging
 import time
 from datetime import datetime, timedelta, timezone
@@ -361,6 +362,37 @@ async def get_zone_setting(setting_name: str) -> str | None:
         except ValueError as e:
             logger.error(f"Konnte Zone-Setting {setting_name} nicht lesen (Ungültige Antwort): {e}")
             return None
+
+
+# Unkritische, lesbare Zone-Settings für die Action-Center-Übersicht
+ZONE_SETTINGS_SUMMARY_KEYS = [
+    "development_mode",
+    "security_level",
+    "ssl",
+    "min_tls_version",
+    "http2",
+    "http3",
+    "ipv6",
+    "brotli",
+    "always_online",
+    "cache_level",
+]
+
+
+async def get_zone_settings_summary() -> dict:
+    """Liest mehrere unkritische Zone-Settings parallel ein (read-only)."""
+    ok, cfg_error = _zone_configured()
+    if not ok:
+        return {"configured": False, "error": cfg_error, "settings": {}}
+
+    results = await asyncio.gather(
+        *[get_zone_setting(key) for key in ZONE_SETTINGS_SUMMARY_KEYS],
+        return_exceptions=True,
+    )
+    settings_map = {}
+    for key, value in zip(ZONE_SETTINGS_SUMMARY_KEYS, results):
+        settings_map[key] = None if isinstance(value, Exception) else value
+    return {"configured": True, "error": None, "settings": settings_map}
 
 
 async def purge_cache(purge_everything: bool = True, files: list[str] = None) -> tuple[bool, str]:

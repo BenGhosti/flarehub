@@ -312,6 +312,20 @@ async def settings_page(request: Request):
     })
 
 
+@app.get("/actions", response_class=HTMLResponse)
+async def actions_page(request: Request):
+    if not settings.FEATURE_ACTION_CENTER:
+        return RedirectResponse(url="/")
+    return templates.TemplateResponse("actions.html", {
+        "request": request,
+        "app_name": settings.APP_NAME,
+        "default_theme": settings.DEFAULT_THEME,
+        "auth_required": not settings.auth_disabled,
+        "feature_purge_cache": settings.FEATURE_PURGE_CACHE,
+        "zone_configured": bool(settings.CLOUDFLARE_API_TOKEN and settings.CLOUDFLARE_ZONE_ID),
+    })
+
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
     return templates.TemplateResponse("dashboard.html", {
@@ -324,6 +338,12 @@ async def dashboard_page(request: Request):
         "feature_cache_ratio_chart": settings.FEATURE_CACHE_RATIO_CHART,
         "feature_threats_chart": settings.FEATURE_THREATS_CHART,
         "feature_security_feed": settings.FEATURE_SECURITY_FEED,
+        "feature_cache_donut_chart": settings.FEATURE_CACHE_DONUT_CHART,
+        "feature_threat_donut_chart": settings.FEATURE_THREAT_DONUT_CHART,
+        "feature_visitors_chart": settings.FEATURE_VISITORS_CHART,
+        "feature_pageviews_chart": settings.FEATURE_PAGEVIEWS_CHART,
+        "feature_cached_uncached_chart": settings.FEATURE_CACHED_UNCACHED_CHART,
+        "feature_action_center": settings.FEATURE_ACTION_CENTER,
         "feature_quick_actions": settings.FEATURE_QUICK_ACTIONS,
         "feature_dev_mode_toggle": settings.FEATURE_DEV_MODE_TOGGLE,
         "feature_purge_cache": settings.FEATURE_PURGE_CACHE,
@@ -359,7 +379,7 @@ async def analytics_timeseries(
     since = now - delta
 
     labels, req_total, req_cached, req_uncached = [], [], [], []
-    bw_total, bw_cached, threats, uniques = [], [], [], []
+    bw_total, bw_cached, threats, uniques, page_views = [], [], [], [], []
 
     if resolution == "raw":
         # Rohdaten liegen nur für die letzten RAW_RETENTION_HOURS vor; ältere Punkte im
@@ -388,6 +408,7 @@ async def analytics_timeseries(
             bw_cached.append(round(r.bandwidth_cached_bytes / 1_000_000, 2))
             threats.append(r.threats_total)
             uniques.append(r.unique_visitors_max)
+            page_views.append(r.page_views)
         for r in raw_rows:
             labels.append(r.timestamp.strftime("%Y-%m-%d %H:%M"))
             req_total.append(r.requests_total)
@@ -397,6 +418,7 @@ async def analytics_timeseries(
             bw_cached.append(round(r.bandwidth_cached_bytes / 1_000_000, 2))
             threats.append(r.threats_total)
             uniques.append(r.unique_visitors)
+            page_views.append(r.page_views)
 
     elif resolution == "hourly":
         rows = (
@@ -415,6 +437,7 @@ async def analytics_timeseries(
             bw_cached.append(round(r.bandwidth_cached_bytes / 1_000_000, 2))
             threats.append(r.threats_total)
             uniques.append(r.unique_visitors_max)
+            page_views.append(r.page_views)
 
     else:  # daily
         rows = (
@@ -433,6 +456,7 @@ async def analytics_timeseries(
             bw_cached.append(round(r.bandwidth_cached_bytes / 1_000_000, 2))
             threats.append(r.threats_total)
             uniques.append(r.unique_visitors_max)
+            page_views.append(r.page_views)
 
     return {
         "resolution": resolution,
@@ -444,6 +468,56 @@ async def analytics_timeseries(
         "bandwidth_cached_mb": bw_cached,
         "threats_total": threats,
         "unique_visitors": uniques,
+        "page_views": page_views,
+    }
+
+
+@app.get("/api/analytics/donuts")
+async def analytics_donuts(
+    range: str = "24h",
+    _auth: bool = Depends(auth.get_current_session),
+    db: Session = Depends(get_db),
+):
+    """Aggregierte Werte für die Donut-Charts (Cache-Split + Threat-Aktionen) über den
+    gewählten Zeitraum."""
+    now = datetime.utcnow()
+    range_map = {
+        "6h": (timedelta(hours=6), "raw"),
+        "24h": (timedelta(hours=24), "raw"),
+        "7d": (timedelta(days=7), "hourly"),
+        "30d": (timedelta(days=30), "hourly"),
+        "90d": (timedelta(days=90), "daily"),
+        "1y": (timedelta(days=365), "daily"),
+    }
+    delta, resolution = range_map.get(range, range_map["24h"])
+    since = now - delta
+
+    if resolution == "raw":
+        rows = db.query(AnalyticsSnapshot).filter(AnalyticsSnapshot.timestamp >= since).all()
+    elif resolution == "hourly":
+        rows = db.query(AnalyticsHourly).filter(AnalyticsHourly.hour_start >= since).all()
+    else:
+        rows = db.query(AnalyticsDaily).filter(AnalyticsDaily.day >= since).all()
+
+    cached = sum(r.requests_cached for r in rows)
+    uncached = sum(r.requests_uncached for r in rows)
+
+    # Threat-Aktionen aus den einzelnen Feed-Events. Nur verfügbar, solange die
+    # Ereignisse nicht durch die Retention (THREAT_EVENT_RETENTION_DAYS) gelöscht sind -
+    # für lange Zeiträume ist das daher eine Untermenge der aggregierten Threats.
+    action_counts: dict[str, int] = {}
+    event_rows = db.query(ThreatEvent).filter(ThreatEvent.timestamp >= since).all()
+    for e in event_rows:
+        action = (e.action or "unbekannt").lower()
+        action_counts[action] = action_counts.get(action, 0) + 1
+
+    return {
+        "cache": {"cached": cached, "uncached": uncached},
+        "threat_actions": [
+            {"action": action, "count": count}
+            for action, count in sorted(action_counts.items(), key=lambda item: -item[1])
+        ],
+        "threat_events_available": len(event_rows) > 0,
     }
 
 
@@ -530,6 +604,10 @@ class ToggleGeneric(BaseModel):
     enabled: bool
 
 
+class PurgeUrlsPayload(BaseModel):
+    urls: list[str]
+
+
 def _require_zone_configured():
     if not settings.CLOUDFLARE_API_TOKEN or not settings.CLOUDFLARE_ZONE_ID:
         raise HTTPException(
@@ -579,6 +657,33 @@ async def purge_cache_endpoint(_auth: bool = Depends(auth.get_current_session)):
     if not ok:
         raise HTTPException(status_code=502, detail=message)
     return {"success": True}
+
+
+@app.post("/api/zone/purge-cache-urls")
+async def purge_cache_urls_endpoint(payload: PurgeUrlsPayload, _auth: bool = Depends(auth.get_current_session)):
+    """Leert den Cache nur für ausgewählte URLs (unkritische Action-Center-Aktion)."""
+    if not settings.FEATURE_PURGE_CACHE:
+        raise HTTPException(status_code=403, detail="Feature deaktiviert")
+    _require_zone_configured()
+
+    urls = [u.strip() for u in payload.urls if u and u.strip()]
+    if not urls:
+        raise HTTPException(status_code=400, detail="Keine URLs angegeben")
+    if len(urls) > 30:
+        raise HTTPException(status_code=400, detail="Cloudflare erlaubt max. 30 URLs pro Purge-Aufruf")
+
+    ok, message = await collector.purge_cache(purge_everything=False, files=urls)
+    if not ok:
+        raise HTTPException(status_code=502, detail=message)
+    return {"success": True}
+
+
+@app.get("/api/zone/settings-summary")
+async def zone_settings_summary(_auth: bool = Depends(auth.get_current_session)):
+    """Read-only Übersicht unkritischer Zone-Settings für das Action Center."""
+    if not settings.FEATURE_ACTION_CENTER:
+        raise HTTPException(status_code=403, detail="Feature deaktiviert")
+    return await collector.get_zone_settings_summary()
 
 
 @app.post("/api/collector/run-now")

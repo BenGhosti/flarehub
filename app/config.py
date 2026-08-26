@@ -92,6 +92,13 @@ class Settings:
     FEATURE_THREATS_CHART: bool = _bool("FEATURE_THREATS_CHART", True)
     FEATURE_SECURITY_FEED: bool = _bool("FEATURE_SECURITY_FEED", True)
     SECURITY_FEED_LIMIT: int = _int("SECURITY_FEED_LIMIT", 50)
+    # Zusätzliche Charts (alle Daten werden ohnehin gesammelt)
+    FEATURE_CACHE_DONUT_CHART: bool = _bool("FEATURE_CACHE_DONUT_CHART", True)      # Pie: Cached vs. Uncached
+    FEATURE_THREAT_DONUT_CHART: bool = _bool("FEATURE_THREAT_DONUT_CHART", True)    # Pie: Threat-Aktionen
+    FEATURE_VISITORS_CHART: bool = _bool("FEATURE_VISITORS_CHART", True)            # Unique Visitors
+    FEATURE_PAGEVIEWS_CHART: bool = _bool("FEATURE_PAGEVIEWS_CHART", True)          # Page Views
+    FEATURE_CACHED_UNCACHED_CHART: bool = _bool("FEATURE_CACHED_UNCACHED_CHART", True)  # Stacked Cached/Uncached
+    FEATURE_ACTION_CENTER: bool = _bool("FEATURE_ACTION_CENTER", True)
     FEATURE_QUICK_ACTIONS: bool = _bool("FEATURE_QUICK_ACTIONS", True)
     FEATURE_DEV_MODE_TOGGLE: bool = _bool("FEATURE_DEV_MODE_TOGGLE", True)
     FEATURE_PURGE_CACHE: bool = _bool("FEATURE_PURGE_CACHE", True)
