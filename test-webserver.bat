@@ -61,7 +61,6 @@ rem Demo-PIN hat 4 Stellen (1234), deshalb hier explizit 4 statt Default 6
 set "AUTH_PIN_LENGTH=4"
 set "ADMIN_TOKEN=test-admin-token"
 set "SESSION_SECRET_KEY=test-secret-key-flarehub-1234-abcdef"
-set "SESSION_COOKIE_SECURE=false"
 set "LOG_LEVEL=INFO"
 set "COLLECTOR_RUN_ON_STARTUP=false"
 set "COLLECTOR_INTERVAL_MINUTES=10"
