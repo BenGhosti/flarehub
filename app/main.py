@@ -315,8 +315,7 @@ async def logout():
 async def login_page(request: Request):
     if settings.auth_disabled:
         return RedirectResponse(url="/")
-    return templates.TemplateResponse("login.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "login.html", {
         "app_name": settings.APP_NAME,
         "auth_mode": settings.AUTH_MODE,
         "pin_length": settings.AUTH_PIN_LENGTH,
@@ -329,8 +328,7 @@ async def settings_page(request: Request):
     # Das Seiten-Skelett enthält keine sensiblen Daten (alle Daten kommen über die
     # API mit Bearer-Token). Der Token-Check findet im Frontend statt:
     # Ohne gültiges Token leitet die Seite sofort auf /login um.
-    return templates.TemplateResponse("settings.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "settings.html", {
         "app_name": settings.APP_NAME,
         "default_theme": settings.DEFAULT_THEME,
         "admin_token_configured": bool(settings.ADMIN_TOKEN),
@@ -342,8 +340,7 @@ async def settings_page(request: Request):
 async def actions_page(request: Request):
     if not settings.FEATURE_ACTION_CENTER:
         return RedirectResponse(url="/")
-    return templates.TemplateResponse("actions.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "actions.html", {
         "app_name": settings.APP_NAME,
         "default_theme": settings.DEFAULT_THEME,
         "auth_required": not settings.auth_disabled,
@@ -354,8 +351,7 @@ async def actions_page(request: Request):
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard_page(request: Request):
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "dashboard.html", {
         "app_name": settings.APP_NAME,
         "default_theme": settings.DEFAULT_THEME,
         "auth_required": not settings.auth_disabled,
