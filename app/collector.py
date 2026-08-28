@@ -167,6 +167,19 @@ async def _graphql_request(query: str, variables: dict) -> tuple[dict | None, st
     return data, None
 
 
+def _zone_error_hint(error: str) -> str:
+    """Augments "zone not found" errors with the configured zone ID so the operator
+    can compare it against the Cloudflare dashboard."""
+    lowered = error.lower()
+    if "zone" in lowered and "not found" in lowered:
+        return (
+            f"{error} (configured CLOUDFLARE_ZONE_ID: {settings.CLOUDFLARE_ZONE_ID} - "
+            f"this ID must belong to the Cloudflare account of the API token; "
+            f"copy it from Dashboard -> Overview -> API -> Zone ID)"
+        )
+    return error
+
+
 async def verify_zone_access() -> dict:
     """Validates token + zone via the same GraphQL query the collector uses (read-only).
     Returns {"configured": bool, "ok": bool, "error": str | None}.
@@ -187,7 +200,7 @@ async def verify_zone_access() -> dict:
         "limit": 1,
     })
     if error:
-        return {"configured": True, "ok": False, "error": error}
+        return {"configured": True, "ok": False, "error": _zone_error_hint(error)}
     return {"configured": True, "ok": True, "error": None}
 
 
@@ -220,6 +233,7 @@ async def fetch_analytics_and_store():
     duration_ms = int((time.monotonic() - start_ts) * 1000)
 
     if error:
+        error = _zone_error_hint(error)
         logger.error(f"Cloudflare analytics query failed: {error}")
         db = SessionLocal()
         try:

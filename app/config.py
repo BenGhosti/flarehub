@@ -28,6 +28,13 @@ def _int(name: str, default: int) -> int:
         return default
 
 
+def _strip(name: str, default: str = "") -> str:
+    """Reads a value and strips surrounding whitespace – copied values (tokens,
+    zone IDs) often carry accidental spaces/newlines that break the API call."""
+    val = os.getenv(name)
+    return default if val is None else val.strip()
+
+
 class Settings:
     # --- General ---
     APP_NAME: str = os.getenv("APP_NAME", "FlareHub")
@@ -43,7 +50,7 @@ class Settings:
     # Plaintext PIN (recommended for Docker: bcrypt hashes contain "$" characters that
     # Docker Compose may interpret as variable interpolation, mangling the hash).
     # If AUTH_PIN is set, it takes precedence over AUTH_PIN_HASH.
-    AUTH_PIN: str = os.getenv("AUTH_PIN", "")
+    AUTH_PIN: str = _strip("AUTH_PIN")
     # bcrypt hash of the PIN (alternative to AUTH_PIN). Generate with:
     #   python -c "import bcrypt; print(bcrypt.hashpw(b'123456', bcrypt.gensalt()).decode())"
     AUTH_PIN_HASH: str = os.getenv("AUTH_PIN_HASH", "")
@@ -52,7 +59,7 @@ class Settings:
     AUTH_PIN_MAX_ATTEMPTS: int = _int("AUTH_PIN_MAX_ATTEMPTS", 5)
     AUTH_PIN_LOCKOUT_SECONDS: int = _int("AUTH_PIN_LOCKOUT_SECONDS", 300)
 
-    ADMIN_TOKEN: str = os.getenv("ADMIN_TOKEN", "")
+    ADMIN_TOKEN: str = _strip("ADMIN_TOKEN")
 
     WEBAUTHN_RP_ID: str = os.getenv("WEBAUTHN_RP_ID", "localhost")
     WEBAUTHN_RP_NAME: str = os.getenv("WEBAUTHN_RP_NAME", "FlareHub")
@@ -73,9 +80,9 @@ class Settings:
     SECURITY_HEADERS_ENABLED: bool = _bool("SECURITY_HEADERS_ENABLED", True)
 
     # --- Cloudflare ---
-    CLOUDFLARE_API_TOKEN: str = os.getenv("CLOUDFLARE_API_TOKEN", "")
-    CLOUDFLARE_ZONE_ID: str = os.getenv("CLOUDFLARE_ZONE_ID", "")
-    CLOUDFLARE_ACCOUNT_ID: str = os.getenv("CLOUDFLARE_ACCOUNT_ID", "")
+    CLOUDFLARE_API_TOKEN: str = _strip("CLOUDFLARE_API_TOKEN")
+    CLOUDFLARE_ZONE_ID: str = _strip("CLOUDFLARE_ZONE_ID")
+    CLOUDFLARE_ACCOUNT_ID: str = _strip("CLOUDFLARE_ACCOUNT_ID")
     CLOUDFLARE_API_BASE_URL: str = os.getenv("CLOUDFLARE_API_BASE_URL", "https://api.cloudflare.com/client/v4")
     CLOUDFLARE_GRAPHQL_URL: str = os.getenv("CLOUDFLARE_GRAPHQL_URL", "https://api.cloudflare.com/client/v4/graphql")
     CLOUDFLARE_API_TIMEOUT: int = _int("CLOUDFLARE_API_TIMEOUT", 15)

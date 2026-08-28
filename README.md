@@ -70,7 +70,8 @@ A lean Cloudflare Analytics & Quick Actions dashboard for Unraid/Docker.
    python3 -c "import secrets; print(secrets.token_hex(24))"
    ```
 
-7. Open the dashboard at `http://<host>:8000` and log in with the PIN. Under
+7. Open the dashboard at `http://<host>:<HOST_PORT>` (default external port: **1111**,
+   configurable via `HOST_PORT` in the `.env`) and log in with the PIN. Under
    **Settings → Unlock passkey management**, enter the admin token (valid for 10 minutes)
    and add or delete passkeys there. The admin token is an additional hurdle
    separate from the normal login – even with an active session, passkey

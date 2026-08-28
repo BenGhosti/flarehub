@@ -6,8 +6,10 @@ services:
     # Container runs as UID 1001 (non-root). The mounted host directory
     # must be writable by UID 1001, run once:
     #   chown -R 1001:1001 ./data
+    # External (host) port, configurable via HOST_PORT in the .env (default 1111).
+    # The internal port stays APP_PORT (8000) inside the container.
     ports:
-      - "8000:8000"
+      - "${HOST_PORT:-1111}:8000"
     volumes:
       - ./data:/app/data
     env_file:
