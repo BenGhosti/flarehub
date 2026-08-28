@@ -104,4 +104,26 @@ residual risks.
 - [ ] TLS via reverse proxy, HSTS on the proxy
 - [ ] `chown -R 1001:1001 data/` (non-root container)
 - [ ] No more than 1 Uvicorn worker
+- [ ] If a reverse proxy sits in front: set `TRUST_PROXY_HEADERS=true` so rate limiting
+      and the PIN lockout see real client IPs (otherwise one attacker can lock out
+      every user, because all traffic shares the proxy IP)
 - [ ] Run `docker compose up -d --build` and play through the login flow (PIN + passkey) once
+
+## 6. Active audit (2026-08-29)
+
+Repeated active scan: dependency audit, git history secret scan, source pattern scan
+(eval/exec/subprocess/pickle/raw SQL), XSS review of all `innerHTML` sinks, auth/CSRF review.
+
+| # | Finding | Severity | Status |
+|---|---|---|---|
+| 1 | Rate limiter table grew without bound (memory DoS via many distinct IPs) | Medium | Fixed (periodic sweep of stale entries) |
+| 2 | `/api/collector/run-now` without cooldown - logged-in user could exhaust the Cloudflare GraphQL quota (300 queries/5 min) | Medium | Fixed (`MANUAL_RUN_COOLDOWN_SECONDS`, default 30 s, 429 otherwise) |
+| 3 | Rate limiting / PIN lockout keyed on the proxy IP when running behind a reverse proxy (one attacker locks out all users; IP rotation defeats the lockout) | Medium | Fixed (opt-in `TRUST_PROXY_HEADERS=true` honors `X-Forwarded-For`; default stays peer IP because spoofable headers must not be trusted blindly) |
+| 4 | Cache purge accepted arbitrary strings as URLs | Low | Fixed (only `http`/`https` URLs with a host are accepted) |
+| 5 | `pip-audit` on pinned requirements | – | Clean: 0 known vulnerabilities |
+| 6 | Git history contains no API tokens / .env secrets | – | Verified (`.env` gitignored) |
+| 7 | No eval/exec/subprocess/unsafe deserialization in the codebase | – | Verified |
+| 8 | All `innerHTML` sinks escape Cloudflare/user input (`esc()`) | – | Verified |
+| 9 | CSP uses `script-src 'self' 'unsafe-inline'` (needed for the Jinja-inline page scripts) | Low | Accepted - mitigation via escaping + no-store; could be removed by moving all page JS to static files |
+| 10 | `AUTH_PIN` stores the PIN in plaintext in the `.env` (hashed with bcrypt at startup) | Low | Accepted trade-off (Docker Compose mangles `$` in hashes); restrict `.env` file permissions |
+| 11 | PIN lockout/rate limit state is in-memory (lost on restart; IP rotation bypasses the lockout) | Low | Accepted residual risk - see section 4; optionally enable `TRUST_PROXY_HEADERS` and block flood IPs at the proxy/WAF |

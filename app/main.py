@@ -35,6 +35,21 @@ scheduler = AsyncIOScheduler()
 
 # Simple in-memory rate limiter for login endpoints
 _rate_limit_buckets: dict = {}
+# Timestamp of the last manual collector run (cooldown guard)
+_last_manual_run: float = 0.0
+
+
+def _client_ip(request: Request) -> str:
+    """Best-effort client IP for rate limiting / lockout.
+
+    X-Forwarded-For is only honored when TRUST_PROXY_HEADERS=true - the flag is
+    required because blindly trusting the header (e.g. without a proxy that
+    overwrites it) lets attackers spoof arbitrary IPs and bypass the lockout."""
+    if settings.TRUST_PROXY_HEADERS:
+        fwd = request.headers.get("x-forwarded-for", "")
+        if fwd:
+            return fwd.split(",")[0].strip() or "unknown"
+    return request.client.host if request.client else "unknown"
 
 
 @asynccontextmanager
@@ -148,6 +163,12 @@ def _rate_limit_ok(ip: str) -> bool:
     if not settings.RATE_LIMIT_ENABLED:
         return True
     now = time.time()
+    # Bound memory: sweep stale entries once the table grows (many distinct IPs
+    # would otherwise accumulate forever - a memory-based DoS).
+    if len(_rate_limit_buckets) > 500:
+        stale = [k for k, v in _rate_limit_buckets.items() if not any(now - t < 60 for t in v)]
+        for k in stale:
+            del _rate_limit_buckets[k]
     window = _rate_limit_buckets.setdefault(ip, [])
     window[:] = [t for t in window if now - t < 60]
     if len(window) >= settings.RATE_LIMIT_LOGIN_ATTEMPTS_PER_MINUTE:
@@ -202,7 +223,7 @@ async def auth_status(request: Request, db: Session = Depends(get_db)):
 
 @app.post("/api/auth/verify-pin")
 async def verify_pin_endpoint(payload: PinPayload, request: Request):
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _client_ip(request)
     if not _rate_limit_ok(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
 
@@ -233,7 +254,7 @@ async def passkey_auth_options(db: Session = Depends(get_db)):
 
 @app.post("/api/passkey/auth-verify")
 async def passkey_auth_verify(payload: PasskeyVerifyPayload, request: Request, db: Session = Depends(get_db)):
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _client_ip(request)
     if not _rate_limit_ok(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
 
@@ -264,7 +285,7 @@ async def admin_verify(payload: AdminTokenPayload, request: Request):
     The grant is NOT cached: it is valid for 10 minutes only and lives exclusively
     in the browser's sessionStorage."""
     auth.get_current_session(request)
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _client_ip(request)
     if not _rate_limit_ok(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
 
@@ -1041,15 +1062,21 @@ async def purge_cache_urls_endpoint(payload: PurgeUrlsPayload, _auth: bool = Dep
     _require_zone_configured()
 
     urls = [u.strip() for u in payload.urls if u and u.strip()]
-    if not urls:
-        raise HTTPException(status_code=400, detail="No URLs provided")
-    if len(urls) > 30:
+    # Only allow real http(s) URLs - anything else (e.g. file:// or garbage) is rejected
+    valid_urls = []
+    for u in urls:
+        parsed = urlparse(u)
+        if parsed.scheme in ("http", "https") and parsed.netloc:
+            valid_urls.append(u)
+    if not valid_urls:
+        raise HTTPException(status_code=400, detail="No valid URLs provided (http/https required)")
+    if len(valid_urls) > 30:
         raise HTTPException(status_code=400, detail="Cloudflare allows max. 30 URLs per purge request")
 
-    ok, message = await collector.purge_cache(purge_everything=False, files=urls)
+    ok, message = await collector.purge_cache(purge_everything=False, files=valid_urls)
     if not ok:
         raise HTTPException(status_code=502, detail=message)
-    return {"success": True}
+    return {"success": True, "purged": len(valid_urls)}
 
 
 @app.get("/api/zone/settings-summary")
@@ -1063,7 +1090,18 @@ async def zone_settings_summary(_auth: bool = Depends(auth.get_current_session))
 @app.post("/api/collector/run-now")
 async def collector_run_now(_auth: bool = Depends(auth.get_current_session)):
     """Triggers a collector run manually (incl. passive analytics), e.g. to test the
-    Cloudflare credentials. Read-only, no write actions are triggered."""
+    Cloudflare credentials. Read-only, no write actions are triggered.
+    Cooldown-guarded (MANUAL_RUN_COOLDOWN_SECONDS) to protect the Cloudflare quota."""
+    global _last_manual_run
+    now = time.time()
+    remaining = settings.MANUAL_RUN_COOLDOWN_SECONDS - (now - _last_manual_run)
+    if remaining > 0:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Collector is running. Try again in {int(remaining)}s",
+        )
+    _last_manual_run = now
+
     await collector.fetch_analytics_and_store()
     if settings.FEATURE_COUNTRY_CHART or settings.FEATURE_STATUS_CHART:
         await collector.fetch_passive_analytics_and_store()

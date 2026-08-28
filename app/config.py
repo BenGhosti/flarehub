@@ -160,6 +160,17 @@ class Settings:
     RATE_LIMIT_ENABLED: bool = _bool("RATE_LIMIT_ENABLED", True)
     RATE_LIMIT_LOGIN_ATTEMPTS_PER_MINUTE: int = _int("RATE_LIMIT_LOGIN_ATTEMPTS_PER_MINUTE", 10)
 
+    # --- Security / Proxy ---
+    # true: honor X-Forwarded-For for rate limiting / PIN lockout. ONLY enable when
+    # FlareHub runs behind a trusted reverse proxy that overwrites this header.
+    # false (default): uses the direct peer IP - behind a proxy all clients share
+    # one lockout bucket (attacker could lock everyone out), but the header cannot
+    # be spoofed.
+    TRUST_PROXY_HEADERS: bool = _bool("TRUST_PROXY_HEADERS", False)
+    # Min. seconds between manual collector runs (/api/collector/run-now) to protect
+    # the Cloudflare GraphQL quota from accidental or malicious flooding.
+    MANUAL_RUN_COOLDOWN_SECONDS: int = _int("MANUAL_RUN_COOLDOWN_SECONDS", 30)
+
     @property
     def webhook_active(self) -> bool:
         return self.WEBHOOK_ENABLED and bool(self.WEBHOOK_URL)
