@@ -1,10 +1,11 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en" data-theme="{{ default_theme }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>{{ app_name }} - Settings</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <script src="/static/auth.js"></script>
     {% if auth_required %}
     <script>
@@ -34,7 +35,7 @@
             </div>
             <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
                 <div>
-                    <span style="font-size: 0.85rem;">Last collector run: <strong id="collector-last-run">–</strong></span>
+                    <span style="font-size: 0.85rem;">Last collector run: <strong id="collector-last-run">â€“</strong></span>
                     <p id="collector-last-message" style="font-size: 0.78rem; opacity: 0.65; margin-top: 2px;"></p>
                 </div>
                 <button id="btn-run-collector" type="button" class="btn-small">Run now</button>
@@ -130,7 +131,7 @@
             const lastMsgEl = document.getElementById('collector-last-message');
             if (data.last_run) {
                 lastRunEl.textContent = fmtRelativeTime(data.last_run.timestamp) +
-                    (data.last_run.success ? ' · OK' : ' · Error');
+                    (data.last_run.success ? ' Â· OK' : ' Â· Error');
                 lastRunEl.style.color = data.last_run.success ? 'var(--highlight-color)' : 'var(--danger-color)';
                 lastMsgEl.textContent = data.last_run.message || '';
             } else {

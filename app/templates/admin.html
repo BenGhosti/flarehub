@@ -1,10 +1,11 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en" data-theme="{{ default_theme }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>{{ app_name }} - Admin</title>
     <link rel="stylesheet" href="/static/styles.css">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <script src="/static/auth.js"></script>
     <script src="/static/webauthn.js"></script>
     {% if auth_required %}
@@ -20,12 +21,12 @@
     <div class="container" style="max-width: 700px;">
         <div class="page-title-row">
             <h1 class="page-title">Admin</h1>
-            <button id="btn-lock-admin" type="button" class="btn-ghost" style="display:none;">🔒 Lock admin</button>
+            <button id="btn-lock-admin" type="button" class="btn-ghost" style="display:none;">ðŸ”’ Lock admin</button>
         </div>
 
         {% if not admin_token_configured %}
         <div class="card banner banner-danger">
-            <strong>⚠️ No admin token configured</strong>
+            <strong>âš ï¸ No admin token configured</strong>
             <p>Please set <code>ADMIN_TOKEN</code> in the .env to unlock the admin features.</p>
         </div>
         {% endif %}
@@ -55,7 +56,7 @@
                 <p style="font-size: 0.85rem; opacity: 0.75; margin-bottom: 1rem;">
                     IPs in the security feed are masked by default
                     (e.g. <code>185.220.xxx.xxx</code>). Here you can temporarily disable
-                    the masking – only applies to the active browser session
+                    the masking â€“ only applies to the active browser session
                     and only with a valid admin grant.
                 </p>
                 <label style="display:flex; align-items:center; gap:0.75rem; cursor:pointer; font-size: 0.9rem;">
@@ -111,7 +112,7 @@
                     <button id="btn-refresh-logs" type="button" class="btn-small">Refresh</button>
                 </h3>
                 <p style="font-size: 0.8rem; opacity: 0.6; margin-bottom: 0.75rem;">
-                    Read-only – secrets/tokens are automatically masked as ***.
+                    Read-only â€“ secrets/tokens are automatically masked as ***.
                 </p>
                 <div style="overflow-x:auto;">
                     <table class="log-table">
@@ -133,7 +134,7 @@
             <div class="card" style="text-align:left;">
                 <h3 style="margin-bottom: 0.75rem;">Webhook alerting</h3>
                 <p style="font-size: 0.85rem; opacity: 0.75;">
-                    Status: <strong id="webhook-status">–</strong>
+                    Status: <strong id="webhook-status">â€“</strong>
                 </p>
                 <p style="font-size: 0.78rem; opacity: 0.6; margin-top: 4px;">
                     Configured via <code>WEBHOOK_ENABLED</code> / <code>WEBHOOK_URL</code> /
@@ -329,8 +330,8 @@
         revealToggle.addEventListener('change', () => {
             setRevealIps(revealToggle.checked);
             const msg = revealToggle.checked
-                ? 'Masking disabled – real IPs are shown (this session only).'
-                : 'Masking enabled – IPs are masked again.';
+                ? 'Masking disabled â€“ real IPs are shown (this session only).'
+                : 'Masking enabled â€“ IPs are masked again.';
             showFeedback('masking-feedback', msg);
         });
 
@@ -361,7 +362,7 @@
                     meta.className = 'passkey-meta';
                     const created = key.created_at ? new Date(key.created_at).toLocaleString('en-GB') : 'unknown';
                     const lastUsed = key.last_used_at ? new Date(key.last_used_at).toLocaleString('en-GB') : 'never';
-                    meta.textContent = `Created: ${created} · Last used: ${lastUsed}`;
+                    meta.textContent = `Created: ${created} Â· Last used: ${lastUsed}`;
                     info.appendChild(name);
                     info.appendChild(meta);
                     const removeBtn = document.createElement('button');
@@ -464,7 +465,7 @@
                 if (!res.ok) throw new Error((await res.json()).detail);
                 const data = await res.json();
                 showFeedback('maintenance-feedback',
-                    `VACUUM: ${data.vacuum} · ANALYZE: ${data.analyze} · Duration: ${data.duration_ms} ms`,
+                    `VACUUM: ${data.vacuum} Â· ANALYZE: ${data.analyze} Â· Duration: ${data.duration_ms} ms`,
                     data.vacuum !== 'OK' || data.analyze !== 'OK');
             } catch (err) {
                 showFeedback('maintenance-feedback', 'Error: ' + err.message, true);
@@ -490,11 +491,11 @@
                 }
                 body.innerHTML = logs.map(l => `
                     <tr>
-                        <td>${l.timestamp ? new Date(l.timestamp).toLocaleString('en-GB') : '–'}</td>
+                        <td>${l.timestamp ? new Date(l.timestamp).toLocaleString('en-GB') : 'â€“'}</td>
                         <td><span class="log-status ${l.success ? 'ok' : 'err'}">${l.success ? 'OK' : 'ERROR'}</span></td>
-                        <td class="log-message">${esc(l.message || '–')}</td>
-                        <td>${l.duration_ms ?? '–'} ms</td>
-                        <td>${l.records_fetched ?? '–'}</td>
+                        <td class="log-message">${esc(l.message || 'â€“')}</td>
+                        <td>${l.duration_ms ?? 'â€“'} ms</td>
+                        <td>${l.records_fetched ?? 'â€“'}</td>
                     </tr>
                 `).join('');
             } catch (err) {
