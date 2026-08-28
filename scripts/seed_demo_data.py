@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.database import (  # noqa: E402
     init_db, SessionLocal,
     AnalyticsSnapshot, AnalyticsHourly, AnalyticsDaily, ThreatEvent,
-    CountryStat, StatusCodeStat,
+    CountryStat, StatusCodeStat, ContentTypeStat, TopUrlStat,
 )
 
 random.seed(42)
@@ -83,6 +83,8 @@ def main():
         db.query(ThreatEvent).delete()
         db.query(CountryStat).delete()
         db.query(StatusCodeStat).delete()
+        db.query(ContentTypeStat).delete()
+        db.query(TopUrlStat).delete()
         db.commit()
 
         now = datetime.utcnow().replace(second=0, microsecond=0)
@@ -163,25 +165,49 @@ def main():
             ))
         db.commit()
 
-        # --- Passive analytics: countries + status codes (last 24h snapshot) ---
+        # --- Passive analytics: daily snapshots for the last 30 days ---
+        # (countries, status groups, content types per day; top URLs for today)
         country_weights = {
             "DE": 42, "US": 18, "NL": 9, "FR": 7, "GB": 6, "CN": 5,
             "RU": 4, "BR": 3, "IN": 3, "UA": 2, "JP": 1,
         }
         total_weight = sum(country_weights.values())
-        total_reqs = 1_100_000
-        for country, weight in country_weights.items():
-            db.add(CountryStat(
-                period_start=now,
-                country=country,
-                requests=int(total_reqs * weight / total_weight),
-            ))
         status_dist = {"2xx": 0.74, "3xx": 0.12, "4xx": 0.10, "5xx": 0.04}
-        for group, share in status_dist.items():
-            db.add(StatusCodeStat(
+        content_dist = {"html": 0.45, "js": 0.16, "image": 0.19, "css": 0.11, "video": 0.05, "other": 0.04}
+
+        for i in range(30):
+            day_ts = now - timedelta(days=i, hours=3)  # late evening of that day
+            total_reqs = int(1_100_000 * random.uniform(0.6, 1.3))
+            for country, weight in country_weights.items():
+                db.add(CountryStat(
+                    period_start=day_ts,
+                    country=country,
+                    requests=int(total_reqs * weight / total_weight),
+                ))
+            for group, share in status_dist.items():
+                db.add(StatusCodeStat(
+                    period_start=day_ts,
+                    status_group=group,
+                    requests=int(total_reqs * share),
+                ))
+            for name, share in content_dist.items():
+                db.add(ContentTypeStat(
+                    period_start=day_ts,
+                    content_type=name,
+                    requests=int(total_reqs * share),
+                    bytes=int(total_reqs * share * random.randint(900, 4800)),
+                ))
+        db.commit()
+
+        top_urls = [
+            "/", "/favicon.ico", "/assets/app.js", "/api/v1/", "/wp-login.php",
+            "/robots.txt", "/.env.backup", "/admin/", "/assets/style.css", "/images/logo.png",
+        ]
+        for path in top_urls:
+            db.add(TopUrlStat(
                 period_start=now,
-                status_group=group,
-                requests=int(total_reqs * share),
+                path=path,
+                requests=random.randint(60, 2200),
             ))
         db.commit()
 
@@ -192,12 +218,15 @@ def main():
             db.query(ThreatEvent).count(),
             db.query(CountryStat).count(),
             db.query(StatusCodeStat).count(),
+            db.query(ContentTypeStat).count(),
+            db.query(TopUrlStat).count(),
         )
         print(
             f"Demo data written to {DB_PATH}\n"
             f"  Snapshots: {counts[0]} | Hourly rollups: {counts[1]} | "
             f"Daily rollups: {counts[2]} | Security events: {counts[3]} | "
-            f"Countries: {counts[4]} | Status codes: {counts[5]}"
+            f"Countries: {counts[4]} | Status codes: {counts[5]} | "
+            f"Content types: {counts[6]} | Top URLs: {counts[7]}"
         )
     finally:
         db.close()

@@ -428,36 +428,32 @@ input:checked + .slider:before { transform: translateX(20px); }
     text-transform: uppercase;
     letter-spacing: 0.03em;
 }
-.briefing-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 3px 0;
+.briefing-table {
+    width: 100%;
+    border-collapse: collapse;
     font-size: 0.82rem;
 }
-.briefing-rank {
-    width: 18px;
-    height: 18px;
-    border-radius: 4px;
-    background: var(--progress-bg);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.7rem;
-    font-weight: 700;
-    opacity: 0.8;
-    flex-shrink: 0;
+.briefing-table td {
+    padding: 5px 6px;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: top;
 }
-.briefing-name {
-    flex: 1;
-    min-width: 0;
+.briefing-table tr:last-child td { border-bottom: none; }
+.briefing-table td.rank {
+    width: 24px;
+    font-weight: 700;
+    opacity: 0.55;
+}
+.briefing-table td.name {
+    max-width: 0;
+    width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.briefing-count {
+.briefing-table td.count {
+    text-align: right;
     font-weight: 600;
-    opacity: 0.85;
 }
 .briefing-empty {
     opacity: 0.5;

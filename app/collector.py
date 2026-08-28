@@ -25,7 +25,7 @@ import httpx
 from app.config import settings
 from app.database import (
     SessionLocal, AnalyticsSnapshot, ThreatEvent, CollectorRun,
-    CountryStat, StatusCodeStat, cleanup_old_data,
+    CountryStat, StatusCodeStat, ContentTypeStat, TopUrlStat, cleanup_old_data,
 )
 
 logger = logging.getLogger("flarehub.collector")
@@ -110,8 +110,8 @@ query GetFirewallEvents($zoneTag: string, $since: Time, $until: Time, $limit: In
 }
 """
 
-# Passive analytics (read-only): last 24h, aggregated by origin country and
-# HTTP status. Uses httpRequestsAdaptiveGroups - a pure read endpoint,
+# Passive analytics (read-only): last 24h, aggregated by origin country, HTTP status
+# and request path. Uses httpRequestsAdaptiveGroups - a pure read endpoint,
 # no write actions are triggered.
 PASSIVE_ANALYTICS_QUERY = """
 query GetPassiveAnalytics($zoneTag: string, $since: Time, $until: Time, $limit: Int) {
@@ -126,12 +126,56 @@ query GetPassiveAnalytics($zoneTag: string, $since: Time, $until: Time, $limit: 
         dimensions {
           clientCountryName
           edgeResponseStatus
+          clientRequestPath
         }
       }
     }
   }
 }
 """
+
+# Content type breakdown (read-only, all plans). Separate query on purpose: if the
+# contentTypeMap field is not available for the zone's plan, only this optional
+# feature fails - the main analytics pipeline stays unaffected.
+CONTENT_TYPES_QUERY = """
+query GetContentTypes($zoneTag: string, $since: Time, $until: Time, $limit: Int) {
+  viewer {
+    zones(filter: { zoneTag: $zoneTag }) {
+      httpRequests1hGroups(
+        limit: $limit
+        filter: { datetime_geq: $since, datetime_leq: $until }
+        orderBy: [datetime_ASC]
+      ) {
+        dimensions { datetime }
+        contentTypeMap {
+          contentType
+          requests
+          bytes
+        }
+      }
+    }
+  }
+}
+"""
+
+# Best-effort mapping of Cloudflare's numeric contentType codes (UInt32) to
+# display labels. Unknown codes fall back to "other".
+CONTENT_TYPE_LABELS = {
+    1: "html",
+    2: "css",
+    3: "js",
+    4: "image",
+    5: "video",
+    6: "other",
+}
+
+
+def _content_type_label(code) -> str:
+    try:
+        code = int(code)
+    except (TypeError, ValueError):
+        return "other"
+    return CONTENT_TYPE_LABELS.get(code, "other")
 
 
 def _headers() -> dict:
@@ -432,6 +476,12 @@ async def fetch_analytics_and_store():
     if settings.FEATURE_COUNTRY_CHART or settings.FEATURE_STATUS_CHART:
         passive_records, passive_error = await fetch_passive_analytics_and_store()
 
+    # Content type breakdown (optional, separate query so a plan restriction here
+    # can never break the main analytics pipeline)
+    content_records = 0
+    content_error = None
+    content_records, content_error = await fetch_content_types_and_store()
+
     db = SessionLocal()
     try:
         cleanup_old_data(db)
@@ -440,10 +490,12 @@ async def fetch_analytics_and_store():
             notes.append(f"Firewall events skipped: {firewall_error}")
         if passive_error:
             notes.append(f"Passive analytics skipped: {passive_error}")
+        if content_error:
+            notes.append(f"Content types skipped: {content_error}")
         if notes:
-            _log_run(db, True, "OK (" + "; ".join(notes) + ")", duration_ms, records_stored + firewall_records + passive_records)
+            _log_run(db, True, "OK (" + "; ".join(notes) + ")", duration_ms, records_stored + firewall_records + passive_records + content_records)
         else:
-            _log_run(db, True, "OK", duration_ms, records_stored + firewall_records + passive_records)
+            _log_run(db, True, "OK", duration_ms, records_stored + firewall_records + passive_records + content_records)
     finally:
         db.close()
 
@@ -600,8 +652,8 @@ def _status_group(status) -> str:
 
 
 async def fetch_passive_analytics_and_store() -> tuple[int, str | None]:
-    """Fetches the last 24h passively aggregated (origin country + HTTP status) and stores
-    them as a snapshot. Returns (stored_row_count, error).
+    """Fetches the last 24h passively aggregated (origin country + HTTP status +
+    request path) and stores them as a snapshot. Returns (stored_row_count, error).
 
     Read-only - no write DNS/WAF actions are triggered.
     Sends a webhook notification on 5xx threshold breach (optional)."""
@@ -629,6 +681,7 @@ async def fetch_passive_analytics_and_store() -> tuple[int, str | None]:
     period_start = until.replace(tzinfo=None)
     countries: dict[str, int] = {}
     status_groups: dict[str, int] = {}
+    paths: dict[str, int] = {}
     for g in groups:
         count = g.get("count", 0) or 0
         dims = g.get("dimensions", {}) or {}
@@ -636,6 +689,9 @@ async def fetch_passive_analytics_and_store() -> tuple[int, str | None]:
         countries[country] = countries.get(country, 0) + count
         group = _status_group(dims.get("edgeResponseStatus"))
         status_groups[group] = status_groups.get(group, 0) + count
+        path = (dims.get("clientRequestPath") or "").strip()
+        if path:
+            paths[path] = paths.get(path, 0) + count
 
     db = SessionLocal()
     stored = 0
@@ -646,13 +702,16 @@ async def fetch_passive_analytics_and_store() -> tuple[int, str | None]:
         for group, count in sorted(status_groups.items(), key=lambda item: -item[1]):
             db.add(StatusCodeStat(period_start=period_start, status_group=group, requests=count))
             stored += 1
+        for path, count in sorted(paths.items(), key=lambda item: -item[1])[:20]:
+            db.add(TopUrlStat(period_start=period_start, path=path[:255], requests=count))
+            stored += 1
         db.commit()
     finally:
         db.close()
 
     logger.info(
         f"Passive analytics stored: {len(countries)} countries, "
-        f"{len(status_groups)} status groups ({stored} rows)"
+        f"{len(status_groups)} status groups, {len(paths)} paths ({stored} rows)"
     )
 
     # Passive alerting: 5xx threshold breached
@@ -667,6 +726,60 @@ async def fetch_passive_analytics_and_store() -> tuple[int, str | None]:
             f"(threshold: {settings.WEBHOOK_5XX_THRESHOLD})"
         )
 
+    return stored, None
+
+
+async def fetch_content_types_and_store() -> tuple[int, str | None]:
+    """Fetches the last 24h aggregated by content type (via httpRequests1hGroups +
+    contentTypeMap, available on all plans) and stores one snapshot per run.
+    Returns (stored_row_count, error). Non-fatal: failures only disable the
+    content type charts."""
+    until = datetime.now(timezone.utc)
+    since = until - timedelta(hours=24)
+
+    variables = {
+        "zoneTag": settings.CLOUDFLARE_ZONE_ID,
+        "since": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "until": until.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "limit": settings.COLLECTOR_MAX_RECORDS_PER_QUERY,
+    }
+
+    data, error = await _graphql_request(CONTENT_TYPES_QUERY, variables)
+    if error:
+        error = _dataset_access_hint(error)
+        logger.warning(f"Content types skipped: {error}")
+        return 0, error
+
+    zones = data.get("viewer", {}).get("zones", [])
+    groups = zones[0].get("httpRequests1hGroups", []) if zones else []
+    if not groups:
+        return 0, None
+
+    period_start = until.replace(tzinfo=None)
+    aggregated: dict[str, dict] = {}
+    for g in groups:
+        for item in g.get("contentTypeMap") or []:
+            label = _content_type_label(item.get("contentType"))
+            entry = aggregated.setdefault(label, {"requests": 0, "bytes": 0})
+            entry["requests"] += item.get("requests", 0) or 0
+            entry["bytes"] += item.get("bytes", 0) or 0
+
+    db = SessionLocal()
+    stored = 0
+    try:
+        for label, entry in sorted(aggregated.items(), key=lambda item: -item[1]["requests"]):
+            db.add(ContentTypeStat(
+                period_start=period_start,
+                content_type=label[:32],
+                requests=entry["requests"],
+                bytes=entry["bytes"],
+            ))
+            stored += 1
+        db.commit()
+    finally:
+        db.close()
+
+    logger.info(f"Content type stats stored: {len(aggregated)} types ({stored} rows)")
     return stored, None
 
 

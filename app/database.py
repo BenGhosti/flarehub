@@ -158,6 +158,27 @@ class StatusCodeStat(Base):
     requests = Column(Integer, default=0)
 
 
+class ContentTypeStat(Base):
+    """Passive analytics: requests/bytes per content type per collection interval."""
+    __tablename__ = "content_type_stats"
+
+    id = Column(Integer, primary_key=True, index=True)
+    period_start = Column(DateTime, index=True)
+    content_type = Column(String, index=True)  # html, css, js, image, video, other
+    requests = Column(Integer, default=0)
+    bytes = Column(Integer, default=0)
+
+
+class TopUrlStat(Base):
+    """Passive analytics: requests per request path per collection interval."""
+    __tablename__ = "top_url_stats"
+
+    id = Column(Integer, primary_key=True, index=True)
+    period_start = Column(DateTime, index=True)
+    path = Column(String, index=True)
+    requests = Column(Integer, default=0)
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 
@@ -297,6 +318,8 @@ def cleanup_old_data(db):
     passive_cutoff = datetime.utcnow() - timedelta(days=settings.PASSIVE_RETENTION_DAYS)
     db.query(CountryStat).filter(CountryStat.period_start < passive_cutoff).delete()
     db.query(StatusCodeStat).filter(StatusCodeStat.period_start < passive_cutoff).delete()
+    db.query(ContentTypeStat).filter(ContentTypeStat.period_start < passive_cutoff).delete()
+    db.query(TopUrlStat).filter(TopUrlStat.period_start < passive_cutoff).delete()
 
     login_cutoff = datetime.utcnow() - timedelta(days=7)
     db.query(LoginAttempt).filter(LoginAttempt.timestamp < login_cutoff).delete()
@@ -341,5 +364,7 @@ def get_storage_stats(db) -> dict:
         "threat_events": db.query(func.count(ThreatEvent.id)).scalar() or 0,
         "country_stats": db.query(func.count(CountryStat.id)).scalar() or 0,
         "status_code_stats": db.query(func.count(StatusCodeStat.id)).scalar() or 0,
+        "content_type_stats": db.query(func.count(ContentTypeStat.id)).scalar() or 0,
+        "top_url_stats": db.query(func.count(TopUrlStat.id)).scalar() or 0,
         "collector_runs": db.query(func.count(CollectorRun.id)).scalar() or 0,
     }

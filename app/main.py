@@ -16,13 +16,14 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
 from app.config import settings
 from app.database import (
     init_db, get_db, SessionLocal,
     AnalyticsSnapshot, AnalyticsHourly, AnalyticsDaily, ThreatEvent, LoginAttempt, CollectorRun,
-    WebAuthnCredential, CountryStat, StatusCodeStat, get_storage_stats, db_maintenance,
+    WebAuthnCredential, CountryStat, StatusCodeStat, ContentTypeStat, TopUrlStat,
+    get_storage_stats, db_maintenance,
 )
 from app import auth
 from app import collector
@@ -678,6 +679,109 @@ async def analytics_status_codes(
     return {
         "available": True,
         "groups": [{"group": g, "requests": by_group.get(g, 0)} for g in order],
+    }
+
+
+@app.get("/api/analytics/extras")
+async def analytics_extras(
+    _auth: bool = Depends(auth.get_current_session),
+    db: Session = Depends(get_db),
+):
+    """Extended passive analytics: content type split (7d), country trend (30d),
+    status trend (30d) and top URLs (latest 24h snapshot). Read-only aggregations
+    of the stored snapshots - no extra Cloudflare fetch."""
+    now = datetime.utcnow()
+
+    def _latest_per_day(rows):
+        """Groups rows by day, keeping only the rows of the latest snapshot per day."""
+        best: dict = {}
+        for r in rows:
+            d = r.period_start.date()
+            if d not in best or r.period_start > best[d]:
+                best[d] = r.period_start
+        grouped: dict = {}
+        for r in rows:
+            if r.period_start == best.get(r.period_start.date()):
+                grouped.setdefault(r.period_start.date(), []).append(r)
+        return grouped
+
+    def _build_series(labels: list, per_day: dict, key_getter, value_getter, max_keys=8):
+        totals: dict = {}
+        for rows in per_day.values():
+            for r in rows:
+                k = key_getter(r)
+                totals[k] = totals.get(k, 0) + value_getter(r)
+        top = [k for k, _ in sorted(totals.items(), key=lambda item: -item[1])][:max_keys]
+        order = {k: i for i, k in enumerate(top)}
+        label_dates = [datetime.strptime(d, "%Y-%m-%d").date() for d in labels]
+        matrix = [[0] * len(order) for _ in labels]
+        for i, d in enumerate(label_dates):
+            for r in per_day.get(d, []):
+                k = key_getter(r)
+                if k in order:
+                    matrix[i][order[k]] += value_getter(r)
+        return [
+            {"name": name, "values": [matrix[i][idx] for i in range(len(labels))]}
+            for name, idx in order.items()
+        ]
+
+    # --- Content types: last 7 days (latest snapshot per day) ---
+    ct_start = now - timedelta(days=7)
+    ct_rows = db.query(ContentTypeStat).filter(ContentTypeStat.period_start >= ct_start).all()
+    ct_days = sorted({r.period_start.date() for r in ct_rows})
+    ct_labels = [d.strftime("%Y-%m-%d") for d in ct_days]
+    ct_per_day = _latest_per_day(ct_rows)
+    content_types = {
+        "available": len(ct_rows) > 0,
+        "labels": ct_labels,
+        "series": _build_series(ct_labels, ct_per_day, lambda r: r.content_type, lambda r: r.requests, max_keys=6),
+        "bytes_series": _build_series(ct_labels, ct_per_day, lambda r: r.content_type, lambda r: r.bytes, max_keys=6),
+    }
+
+    # --- Country trend: last 30 days (latest snapshot per day) ---
+    co_start = now - timedelta(days=30)
+    co_rows = db.query(CountryStat).filter(CountryStat.period_start >= co_start).all()
+    co_days = sorted({r.period_start.date() for r in co_rows})
+    co_labels = [d.strftime("%Y-%m-%d") for d in co_days]
+    co_per_day = _latest_per_day(co_rows)
+    country_trend = {
+        "available": len(co_rows) > 0,
+        "labels": co_labels,
+        "series": _build_series(co_labels, co_per_day, lambda r: r.country, lambda r: r.requests, max_keys=8),
+    }
+
+    # --- Status trend: last 30 days (latest snapshot per day) ---
+    st_rows = db.query(StatusCodeStat).filter(StatusCodeStat.period_start >= co_start).all()
+    st_days = sorted({r.period_start.date() for r in st_rows})
+    st_labels = [d.strftime("%Y-%m-%d") for d in st_days]
+    st_per_day = _latest_per_day(st_rows)
+    status_trend = {
+        "available": len(st_rows) > 0,
+        "labels": st_labels,
+        "series": _build_series(st_labels, st_per_day, lambda r: r.status_group, lambda r: r.requests, max_keys=4),
+    }
+
+    # --- Top URLs: latest snapshot, top 10 ---
+    latest_ts = db.query(func.max(TopUrlStat.period_start)).scalar()
+    top_urls = {"available": False, "urls": []}
+    if latest_ts:
+        url_rows = (
+            db.query(TopUrlStat)
+            .filter(TopUrlStat.period_start == latest_ts)
+            .order_by(desc(TopUrlStat.requests))
+            .limit(10)
+            .all()
+        )
+        top_urls = {
+            "available": True,
+            "urls": [{"path": r.path, "requests": r.requests} for r in url_rows],
+        }
+
+    return {
+        "content_types": content_types,
+        "country_trend": country_trend,
+        "status_trend": status_trend,
+        "top_urls": top_urls,
     }
 
 

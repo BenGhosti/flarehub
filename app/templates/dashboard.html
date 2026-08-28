@@ -279,6 +279,53 @@
         </div>
         {% endif %}
 
+        <div class="chart-row">
+            <div class="card chart-card chart-card-half" style="text-align:left;">
+                <h3 class="card-title">Traffic by Content Type (7d)</h3>
+                <div class="chart-wrap">
+                    <div class="skeleton chart-loading" id="chart-content-types-loading"></div>
+                    <canvas id="chart-content-types"></canvas>
+                </div>
+                <p class="chart-empty" id="chart-content-types-empty" style="display:none;">No data yet (content type stats)</p>
+            </div>
+            <div class="card chart-card chart-card-half" style="text-align:left;">
+                <h3 class="card-title">Bandwidth by Content Type (7d)</h3>
+                <div class="chart-wrap">
+                    <div class="skeleton chart-loading" id="chart-content-type-bytes-loading"></div>
+                    <canvas id="chart-content-type-bytes"></canvas>
+                </div>
+                <p class="chart-empty" id="chart-content-type-bytes-empty" style="display:none;">No data yet (content type stats)</p>
+            </div>
+        </div>
+
+        <div class="chart-row">
+            <div class="card chart-card chart-card-half" style="text-align:left;">
+                <h3 class="card-title">Top Countries (30d)</h3>
+                <div class="chart-wrap">
+                    <div class="skeleton chart-loading" id="chart-country-trend-loading"></div>
+                    <canvas id="chart-country-trend"></canvas>
+                </div>
+                <p class="chart-empty" id="chart-country-trend-empty" style="display:none;">No data yet (passive analytics)</p>
+            </div>
+            <div class="card chart-card chart-card-half" style="text-align:left;">
+                <h3 class="card-title">HTTP Status Trend (30d)</h3>
+                <div class="chart-wrap">
+                    <div class="skeleton chart-loading" id="chart-status-trend-loading"></div>
+                    <canvas id="chart-status-trend"></canvas>
+                </div>
+                <p class="chart-empty" id="chart-status-trend-empty" style="display:none;">No data yet (passive analytics)</p>
+            </div>
+        </div>
+
+        <div class="card chart-card" style="text-align:left;">
+            <h3 class="card-title">Top URLs (24h)</h3>
+            <div class="chart-wrap" style="height: 280px;">
+                <div class="skeleton chart-loading" id="chart-top-urls-loading"></div>
+                <canvas id="chart-top-urls"></canvas>
+            </div>
+            <p class="chart-empty" id="chart-top-urls-empty" style="display:none;">No data yet (requires adaptive analytics)</p>
+        </div>
+
         {% if feature_security_feed %}
         <div class="card" style="text-align:left;">
             <h3 class="card-title">Security Feed</h3>
@@ -448,11 +495,13 @@
                 ? 'no comparison'
                 : (b.trend_pct >= 0 ? '▲ +' + b.trend_pct.toFixed(0) + '%' : '▼ ' + b.trend_pct.toFixed(0) + '%');
             const list = (items, key) => (items && items.length
-                ? items.map((it, i) =>
-                    `<div class="briefing-row"><span class="briefing-rank">${i + 1}</span>` +
-                    `<span class="briefing-name" title="${esc(it[key])}">${esc(it[key])}</span>` +
-                    `<span class="briefing-count">${fmtNumber(it.count)}</span></div>`
-                  ).join('')
+                ? '<table class="briefing-table"><tbody>' +
+                  items.map((it, i) =>
+                    `<tr><td class="rank">${i + 1}</td>` +
+                    `<td class="name" title="${esc(it[key])}">${esc(it[key])}</td>` +
+                    `<td class="count">${fmtNumber(it.count)}</td></tr>`
+                  ).join('') +
+                  '</tbody></table>'
                 : '<p class="briefing-empty">–</p>');
             container.innerHTML =
                 '<div class="briefing-stats">' +
@@ -510,6 +559,15 @@
         let chartRequests, chartBandwidth, chartThreats, chartCacheRatio;
         let chartCachedUncached, chartVisitors, chartPageviews, chartCacheDonut, chartThreatDonut;
         let chartCountries, chartStatusCodes;
+        const extrasPalette = ['#FF5E1F', '#2196F3', '#4caf50', '#9C27B0', '#f0a020', '#00bcd4', '#f44336', '#8bc34a', '#ff9800', '#e91e63', '#999'];
+        const extraCharts = {};
+
+        function destroyExtraChart(canvasId) {
+            if (extraCharts[canvasId]) {
+                extraCharts[canvasId].destroy();
+                delete extraCharts[canvasId];
+            }
+        }
         const chartColors = {
             primary: '#FF5E1F', secondary: '#999', good: '#4caf50', danger: '#f44336',
             info: '#2196F3', purple: '#9C27B0', warn: '#f0a020'
@@ -520,6 +578,7 @@
             return Object.assign({
                 responsive: true,
                 maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
                 plugins: { legend: { labels: { color: textColor, boxWidth: 12, font: { size: 11 } } } },
                 scales: {
                     x: { ticks: { color: '#888', maxTicksLimit: 7, font: { size: 10 } }, grid: { display: false } },
@@ -826,6 +885,96 @@
             }
         }
 
+        async function loadExtras() {
+            const res = await authFetch('/api/analytics/extras');
+            if (!res.ok) return;
+            const d = await res.json();
+
+            renderStackedArea('chart-content-types', d.content_types.labels, d.content_types.series);
+            renderStackedArea('chart-content-type-bytes', d.content_types.labels, d.content_types.bytes_series);
+            renderStackedArea('chart-country-trend', d.country_trend.labels, d.country_trend.series);
+            renderStatusTrend(d.status_trend);
+            renderTopUrls(d.top_urls);
+        }
+
+        function stackedLineOptions() {
+            return chartOptions({
+                scales: {
+                    x: { stacked: true, ticks: { color: '#888', maxTicksLimit: 7, font: { size: 10 } }, grid: { display: false } },
+                    y: { stacked: true, ticks: { color: '#888', font: { size: 10 } }, grid: { color: 'rgba(128,128,128,0.15)' } }
+                }
+            });
+        }
+
+        function renderStackedArea(canvasId, labels, series, colorMap) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas) return;
+            const hasData = series && series.length > 0 && labels.length > 0;
+            toggleEmpty(canvasId, !hasData);
+            destroyExtraChart(canvasId);
+            if (!hasData) return;
+            extraCharts[canvasId] = new Chart(canvas, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: series.map((s, i) => {
+                        const color = colorMap ? (colorMap[s.name] || '#999') : extrasPalette[i % extrasPalette.length];
+                        return {
+                            label: s.name,
+                            data: s.values,
+                            borderColor: color,
+                            backgroundColor: color + '40',
+                            fill: true,
+                            tension: 0.3,
+                            pointRadius: 0
+                        };
+                    })
+                },
+                options: stackedLineOptions()
+            });
+        }
+
+        function renderStatusTrend(t) {
+            const hasData = t && t.available && t.labels.length > 0 && t.series.length > 0;
+            if (!hasData) {
+                const canvas = document.getElementById('chart-status-trend');
+                if (canvas) {
+                    toggleEmpty('chart-status-trend', true);
+                    destroyExtraChart('chart-status-trend');
+                }
+                return;
+            }
+            renderStackedArea('chart-status-trend', t.labels, t.series, { '2xx': '#4caf50', '3xx': '#2196F3', '4xx': '#f0a020', '5xx': '#f44336' });
+        }
+
+        function renderTopUrls(t) {
+            const canvas = document.getElementById('chart-top-urls');
+            if (!canvas) return;
+            const urls = (t && t.urls) || [];
+            const hasData = urls.length > 0;
+            toggleEmpty('chart-top-urls', !hasData);
+            destroyExtraChart('chart-top-urls');
+            if (!hasData) return;
+            extraCharts['chart-top-urls'] = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                    labels: urls.map(u => u.path.length > 40 ? u.path.slice(0, 39) + '…' : u.path),
+                    datasets: [{
+                        label: 'Requests',
+                        data: urls.map(u => u.requests),
+                        backgroundColor: 'rgba(255,94,31,0.6)'
+                    }]
+                },
+                options: chartOptions({
+                    indexAxis: 'y',
+                    scales: {
+                        x: { ticks: { color: '#888', font: { size: 10 } }, grid: { color: 'rgba(128,128,128,0.15)' } },
+                        y: { ticks: { color: '#888', font: { size: 10 } }, grid: { display: false } }
+                    }
+                })
+            });
+        }
+
         document.querySelectorAll('.range-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
@@ -933,7 +1082,7 @@
         }
 
         async function refreshAll() {
-            await Promise.all([loadSummary(), loadInsights(), loadTimeseries(), loadDonuts(), loadPassiveAnalytics(), loadSecurityFeed(), loadZoneStatus(), loadCollectorStatus(), loadZoneCheck()]);
+            await Promise.all([loadSummary(), loadInsights(), loadTimeseries(), loadDonuts(), loadPassiveAnalytics(), loadExtras(), loadSecurityFeed(), loadZoneStatus(), loadCollectorStatus(), loadZoneCheck()]);
         }
 
         refreshAll();
