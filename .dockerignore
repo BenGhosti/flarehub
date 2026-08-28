@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+.env.example
+data/
+*.db
+__pycache__/
+*.pyc
+.venv/
+venv/
+tests/
+scripts/
+*.md
+docker-compose.yml
+Dockerfile
+test-webserver.bat
