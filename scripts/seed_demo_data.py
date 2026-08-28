@@ -1,14 +1,14 @@
 """
-FlareHub – Demo-Datenseed für die Testumgebung (test-webserver.bat).
+FlareHub – demo data seed for the test environment (test-webserver.bat).
 
-Erzeugt realistische Beispieldaten, damit das Dashboard in der Vorschau
-gefüllte Charts und einen Security-Feed zeigt, ohne echte Cloudflare-Zugangsdaten.
-Die Datenaufteilung entspricht exakt der Produktions-Aufbewahrungsstrategie:
-- Snapshots (10-Min-Auflösung) für die letzten 48 Stunden  -> 6h/24h-Ansicht
-- Stunden-Rollups von 48h bis 30 Tage zurück               -> 7T/30T-Ansicht
-- Tages-Rollups von 30 bis 365 Tage zurück                 -> 90T/1J-Ansicht
+Creates realistic sample data so the dashboard preview shows populated charts and
+a security feed without real Cloudflare credentials.
+The data layout matches the production retention strategy exactly:
+- Snapshots (10-min resolution) for the last 48 hours  -> 6h/24h view
+- Hourly rollups from 48h to 30 days back             -> 7d/30d view
+- Daily rollups from 30 to 365 days back              -> 90d/1y view
 
-Nutzung: DATABASE_PATH wird aus der Umgebung gelesen (setzt die Batch-Datei).
+Usage: DATABASE_PATH is read from the environment (set by the batch file).
 """
 import os
 import random
@@ -18,13 +18,13 @@ from pathlib import Path
 
 DB_PATH = os.environ.get("DATABASE_PATH", os.path.join("data", "test.db"))
 
-# WICHTIG: DATABASE_PATH MUSS vor dem Import von app.database gesetzt sein,
-# weil app.config die Einstellungen beim Modulimport aus der Umgebung liest.
+# IMPORTANT: DATABASE_PATH MUST be set before importing app.database,
+# because app.config reads the settings from the environment at module import time.
 os.environ["DATABASE_PATH"] = DB_PATH
 Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
 
-# Projekt-Root auf den sys.path, damit "app" importierbar ist,
-# egal aus welchem Verzeichnis das Skript gestartet wird.
+# Add the project root to sys.path so that "app" is importable,
+# regardless of the directory the script is started from.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.database import (  # noqa: E402
@@ -49,7 +49,7 @@ UA_POOL = [
 
 
 def hour_factor(dt: datetime) -> float:
-    """Tageszeit-Faktor: morgens/mittags/abends mehr Traffic, nachts wenig."""
+    """Time-of-day factor: more traffic in the morning/noon/evening, little at night."""
     h = dt.hour
     if 8 <= h < 12:
         return 1.3
@@ -87,7 +87,7 @@ def main():
 
         now = datetime.utcnow().replace(second=0, microsecond=0)
 
-        # --- Snapshots: letzte 48 Stunden, 10-Minuten-Auflösung ---
+        # --- Snapshots: last 48 hours, 10-minute resolution ---
         t = now - timedelta(hours=48)
         while t <= now:
             reqs = max(200, int(8000 * hour_factor(t) + random.randint(-800, 800)))
@@ -108,7 +108,7 @@ def main():
             t += timedelta(minutes=10)
         db.commit()
 
-        # --- Stunden-Rollups: 48h bis 30 Tage zurück ---
+        # --- Hourly rollups: 48h to 30 days back ---
         t = now - timedelta(days=30)
         while t < now - timedelta(hours=48):
             reqs = max(200, int(12000 * hour_factor(t) + random.randint(-2000, 2000)))
@@ -129,7 +129,7 @@ def main():
             t += timedelta(hours=1)
         db.commit()
 
-        # --- Tages-Rollups: 30 bis 365 Tage zurück ---
+        # --- Daily rollups: 30 to 365 days back ---
         t = now - timedelta(days=365)
         while t < now - timedelta(days=30):
             reqs = max(5000, int(180000 * random.uniform(0.6, 1.3)))
@@ -150,7 +150,7 @@ def main():
             t += timedelta(days=1)
         db.commit()
 
-        # --- Security-Feed: 50 Threat-Events in den letzten 48h ---
+        # --- Security feed: 50 threat events in the last 48h ---
         for _ in range(50):
             db.add(ThreatEvent(
                 timestamp=now - timedelta(minutes=random.randint(10, 2880)),
@@ -163,7 +163,7 @@ def main():
             ))
         db.commit()
 
-        # --- Passive Analytics: Länder + Statuscodes (letzte 24h Snapshot) ---
+        # --- Passive analytics: countries + status codes (last 24h snapshot) ---
         country_weights = {
             "DE": 42, "US": 18, "NL": 9, "FR": 7, "GB": 6, "CN": 5,
             "RU": 4, "BR": 3, "IN": 3, "UA": 2, "JP": 1,
@@ -194,10 +194,10 @@ def main():
             db.query(StatusCodeStat).count(),
         )
         print(
-            f"Demo-Daten erzeugt in {DB_PATH}\n"
-            f"  Snapshots: {counts[0]} | Stunden-Rollups: {counts[1]} | "
-            f"Tages-Rollups: {counts[2]} | Security-Events: {counts[3]} | "
-            f"Länder: {counts[4]} | Statuscodes: {counts[5]}"
+            f"Demo data written to {DB_PATH}\n"
+            f"  Snapshots: {counts[0]} | Hourly rollups: {counts[1]} | "
+            f"Daily rollups: {counts[2]} | Security events: {counts[3]} | "
+            f"Countries: {counts[4]} | Status codes: {counts[5]}"
         )
     finally:
         db.close()

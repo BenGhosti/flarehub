@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de" data-theme="{{ default_theme }}">
+<html lang="en" data-theme="{{ default_theme }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -8,13 +8,13 @@
     <script src="/static/auth.js"></script>
     {% if auth_required %}
     <script>
-        // Kein Token im sessionStorage => neuer Browser-Besuch => Login erzwingen
+        // No token in sessionStorage => new browser visit => force login
         if (!getAuthToken()) window.location.replace('/login');
     </script>
     {% endif %}
 </head>
 <body>
-    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Theme wechseln">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle theme">
         <svg xmlns="http://www.w3.org/2000/svg" class="theme-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path class="moon" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
             <circle class="sun" cx="12" cy="12" r="5" style="display:none"/>
@@ -33,39 +33,39 @@
         <div class="top-bar">
             <div>
                 <h1 style="font-size: 1.6rem; text-align:left;">Action Center</h1>
-                <a href="/" style="font-size: 0.85rem; color: var(--highlight-color); text-decoration:none;">← Zurück zum Dashboard</a>
+                <a href="/" style="font-size: 0.85rem; color: var(--highlight-color); text-decoration:none;">← Back to dashboard</a>
             </div>
             <div class="top-actions">
                 <a href="/settings" style="text-decoration:none;">
-                    <button type="button" class="btn-ghost">Einstellungen</button>
+                    <button type="button" class="btn-ghost">Settings</button>
                 </a>
-                <button id="logout-btn" type="button" class="btn-ghost">Abmelden</button>
+                <button id="logout-btn" type="button" class="btn-ghost">Log out</button>
             </div>
         </div>
 
         {% if not zone_configured %}
         <div class="card banner banner-danger">
-            <strong>⚠️ Cloudflare nicht konfiguriert</strong>
-            <p>Bitte <code>CLOUDFLARE_API_TOKEN</code> und <code>CLOUDFLARE_ZONE_ID</code> in der .env setzen, um die Aktionen nutzen zu können.</p>
+            <strong>⚠️ Cloudflare not configured</strong>
+            <p>Please set <code>CLOUDFLARE_API_TOKEN</code> and <code>CLOUDFLARE_ZONE_ID</code> in the .env to use these actions.</p>
         </div>
         {% endif %}
 
         {% if feature_purge_cache %}
         <div class="card" style="text-align:left;">
-            <h3 class="card-title">Cache leeren</h3>
-            <p class="action-desc">Löscht den Edge-Cache der Zone – unkritisch, wirkt sich nur auf gecachte Inhalte aus.</p>
+            <h3 class="card-title">Clear cache</h3>
+            <p class="action-desc">Purges the zone's edge cache – uncritical, only affects cached content.</p>
 
             <div style="margin: 1.25rem 0;">
-                <button id="btn-purge-all" type="button">Gesamten Cache leeren</button>
+                <button id="btn-purge-all" type="button">Purge entire cache</button>
             </div>
 
             <div style="margin: 1.25rem 0;">
                 <label for="purge-urls" style="display:block; font-size: 0.85rem; margin-bottom: 0.5rem; opacity: 0.85;">
-                    Nur bestimmte URLs leeren (eine pro Zeile, max. 30):
+                    Purge specific URLs only (one per line, max. 30):
                 </label>
-                <textarea id="purge-urls" rows="4" placeholder="https://example.com/startseite&#10;https://example.com/assets/app.js"
+                <textarea id="purge-urls" rows="4" placeholder="https://example.com/homepage&#10;https://example.com/assets/app.js"
                           style="width:100%; padding: 10px 12px; border-radius: 6px; border: 2px solid var(--border-color); background: var(--textarea-bg); color: var(--text-color); font-size: 0.9rem; font-family: monospace; resize: vertical;"></textarea>
-                <button id="btn-purge-urls" type="button" class="btn-small" style="margin-top: 0.75rem;">Ausgewählte URLs leeren</button>
+                <button id="btn-purge-urls" type="button" class="btn-small" style="margin-top: 0.75rem;">Purge selected URLs</button>
             </div>
 
             <p id="cache-feedback" class="feedback-text"></p>
@@ -74,13 +74,13 @@
 
         <div class="card" style="text-align:left;">
             <h3 class="card-title">Analytics</h3>
-            <p class="action-desc">Collector-Lauf manuell anstoßen (holt sofort frische Metriken von Cloudflare).</p>
+            <p class="action-desc">Run the collector manually (immediately fetches fresh metrics from Cloudflare).</p>
             <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.75rem; margin-top: 1.25rem;">
                 <div>
-                    <span style="font-size: 0.85rem;">Letzter Lauf: <strong id="collector-last-run">–</strong></span>
+                    <span style="font-size: 0.85rem;">Last run: <strong id="collector-last-run">–</strong></span>
                     <p id="collector-last-message" style="font-size: 0.78rem; opacity: 0.65; margin-top: 2px;"></p>
                 </div>
-                <button id="btn-run-collector" type="button" class="btn-small">Jetzt ausführen</button>
+                <button id="btn-run-collector" type="button" class="btn-small">Run now</button>
             </div>
             <p id="collector-feedback" class="feedback-text"></p>
         </div>
@@ -91,13 +91,13 @@
                 <button id="btn-refresh-zone" type="button" class="btn-small">Aktualisieren</button>
             </h3>
             <div id="zone-status-container">
-                <p style="opacity:0.6; font-size:0.9rem;">Lade Zone-Settings...</p>
+                <p style="opacity:0.6; font-size:0.9rem;">Loading zone settings...</p>
             </div>
         </div>
     </div>
 
     <script>
-        // --- Theme (localStorage + Server-Default) ---
+        // --- Theme (localStorage + server default) ---
         const savedTheme = localStorage.getItem('theme') || '{{ default_theme }}';
         document.documentElement.setAttribute('data-theme', savedTheme);
         applyThemeIcon(savedTheme);
@@ -120,13 +120,13 @@
         });
 
         function fmtRelativeTime(isoString) {
-            if (!isoString) return 'noch nie';
+            if (!isoString) return 'never';
             const diffMs = Date.now() - new Date(isoString + 'Z').getTime();
             const diffMin = Math.round(diffMs / 60000);
-            if (diffMin < 1) return 'gerade eben';
-            if (diffMin < 60) return `vor ${diffMin} Min.`;
+            if (diffMin < 1) return 'just now';
+            if (diffMin < 60) return `${diffMin} min. ago`;
             const diffH = Math.round(diffMin / 60);
-            return `vor ${diffH} Std.`;
+            return `${diffH} h ago`;
         }
 
         function esc(s) {
@@ -149,9 +149,9 @@
             try {
                 const res = await authFetch('/api/zone/purge-cache', { method: 'POST' });
                 if (!res.ok) throw new Error((await res.json()).detail);
-                showFeedback('cache-feedback', 'Gesamter Cache erfolgreich geleert');
+                showFeedback('cache-feedback', 'Entire cache purged successfully');
             } catch (err) {
-                showFeedback('cache-feedback', 'Fehler: ' + err.message, true);
+                showFeedback('cache-feedback', 'Error: ' + err.message, true);
             } finally {
                 e.target.disabled = false;
             }
@@ -162,17 +162,17 @@
             try {
                 const urls = document.getElementById('purge-urls').value.split('\n')
                     .map(u => u.trim()).filter(u => u.length > 0);
-                if (!urls.length) throw new Error('Keine URLs eingetragen');
+                if (!urls.length) throw new Error('No URLs entered');
                 const res = await authFetch('/api/zone/purge-cache-urls', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ urls })
                 });
                 if (!res.ok) throw new Error((await res.json()).detail);
-                showFeedback('cache-feedback', `${urls.length} URL(s) aus dem Cache geleert`);
+                showFeedback('cache-feedback', `${urls.length} URL(s) purged from the cache`);
                 document.getElementById('purge-urls').value = '';
             } catch (err) {
-                showFeedback('cache-feedback', 'Fehler: ' + err.message, true);
+                showFeedback('cache-feedback', 'Error: ' + err.message, true);
             } finally {
                 e.target.disabled = false;
             }
@@ -187,7 +187,7 @@
             const lastMsgEl = document.getElementById('collector-last-message');
             if (data.last_run) {
                 lastRunEl.textContent = fmtRelativeTime(data.last_run.timestamp) +
-                    (data.last_run.success ? ' · OK' : ' · Fehler');
+                    (data.last_run.success ? ' · OK' : ' · Error');
                 lastRunEl.style.color = data.last_run.success ? 'var(--highlight-color)' : 'var(--danger-color)';
                 lastMsgEl.textContent = data.last_run.message || '';
             } else {
@@ -197,17 +197,17 @@
 
         document.getElementById('btn-run-collector')?.addEventListener('click', async (e) => {
             e.target.disabled = true;
-            e.target.textContent = 'Läuft...';
+            e.target.textContent = 'Running...';
             try {
                 const res = await authFetch('/api/collector/run-now', { method: 'POST' });
                 if (!res.ok) throw new Error((await res.json()).detail);
-                showFeedback('collector-feedback', 'Collector-Lauf abgeschlossen');
+                showFeedback('collector-feedback', 'Collector run completed');
                 await loadCollectorStatus();
             } catch (err) {
-                showFeedback('collector-feedback', 'Fehler: ' + err.message, true);
+                showFeedback('collector-feedback', 'Error: ' + err.message, true);
             } finally {
                 e.target.disabled = false;
-                e.target.textContent = 'Jetzt ausführen';
+                e.target.textContent = 'Run now';
             }
         });
 
@@ -228,7 +228,7 @@
         function renderZoneStatus(data) {
             const container = document.getElementById('zone-status-container');
             if (!data.configured) {
-                container.innerHTML = `<p style="opacity:0.6; font-size:0.9rem;">${data.error || 'Nicht verfügbar'}</p>`;
+                container.innerHTML = `<p style="opacity:0.6; font-size:0.9rem;">${data.error || 'Unavailable'}</p>`;
                 return;
             }
             const rows = Object.entries(SETTING_LABELS).map(([key, label]) => {
@@ -242,10 +242,10 @@
 
         async function loadZoneStatus() {
             const container = document.getElementById('zone-status-container');
-            container.innerHTML = '<p style="opacity:0.6; font-size:0.9rem;">Lade Zone-Settings...</p>';
+            container.innerHTML = '<p style="opacity:0.6; font-size:0.9rem;">Loading zone settings...</p>';
             const res = await authFetch('/api/zone/settings-summary');
             if (!res.ok) {
-                container.innerHTML = '<p style="opacity:0.6; font-size:0.9rem;">Konnte Zone-Settings nicht laden.</p>';
+                container.innerHTML = '<p style="opacity:0.6; font-size:0.9rem;">Could not load zone settings.</p>';
                 return;
             }
             renderZoneStatus(await res.json());

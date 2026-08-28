@@ -1,9 +1,11 @@
 """
-FlareHub – zentrale Konfiguration.
-Liest alle Werte aus der .env (via os.environ) und stellt sinnvolle Defaults bereit.
+FlareHub – central configuration.
+Reads all values from the .env file (via os.environ) and provides sensible defaults.
 """
 import os
 from pathlib import Path
+
+import bcrypt
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -27,7 +29,7 @@ def _int(name: str, default: int) -> int:
 
 
 class Settings:
-    # --- Allgemein ---
+    # --- General ---
     APP_NAME: str = os.getenv("APP_NAME", "FlareHub")
     APP_ENV: str = os.getenv("APP_ENV", "production")
     TZ: str = os.getenv("TZ", "Europe/Berlin")
@@ -38,8 +40,14 @@ class Settings:
     # --- Auth ---
     AUTH_MODE: str = os.getenv("AUTH_MODE", "both").lower()  # pin | passkey | both | none
 
+    # Plaintext PIN (recommended for Docker: bcrypt hashes contain "$" characters that
+    # Docker Compose may interpret as variable interpolation, mangling the hash).
+    # If AUTH_PIN is set, it takes precedence over AUTH_PIN_HASH.
+    AUTH_PIN: str = os.getenv("AUTH_PIN", "")
+    # bcrypt hash of the PIN (alternative to AUTH_PIN). Generate with:
+    #   python -c "import bcrypt; print(bcrypt.hashpw(b'123456', bcrypt.gensalt()).decode())"
     AUTH_PIN_HASH: str = os.getenv("AUTH_PIN_HASH", "")
-    # Laenge der PIN. 6+ Stellen fuer kritische Infrastruktur empfohlen.
+    # PIN length. 6+ digits recommended for critical infrastructure.
     AUTH_PIN_LENGTH: int = _int("AUTH_PIN_LENGTH", 6)
     AUTH_PIN_MAX_ATTEMPTS: int = _int("AUTH_PIN_MAX_ATTEMPTS", 5)
     AUTH_PIN_LOCKOUT_SECONDS: int = _int("AUTH_PIN_LOCKOUT_SECONDS", 300)
@@ -53,16 +61,15 @@ class Settings:
     WEBAUTHN_AUTHENTICATOR_ATTACHMENT: str = os.getenv("WEBAUTHN_AUTHENTICATOR_ATTACHMENT", "")
 
     SESSION_SECRET_KEY: str = os.getenv("SESSION_SECRET_KEY", "change-me-to-a-long-random-string")
-    # Gültigkeit des Login-Tokens (Bearer) in Stunden. Da das Token nur im
-    # sessionStorage des Browsers liegt, muss man sich bei jedem neuen
-    # Browser-Besuch ohnehin neu anmelden - dies ist nur ein oberes Limit.
-    # Für kritische Infrastruktur eher niedrig waehlen (z.B. 2-4).
+    # Login token (Bearer) lifetime in hours. Since the token only lives in the
+    # browser's sessionStorage, every new browser visit requires a fresh login anyway -
+    # this is just an upper limit. Choose a low value for critical infrastructure (e.g. 2-4).
     SESSION_EXPIRY_HOURS: int = _int("SESSION_EXPIRY_HOURS", 4)
-    # true (Standard): Seiten/API-Antworten (ausser /static) erhalten
-    # Cache-Control: no-store, damit kein authentifizierter Inhalt im Browser gecacht wird.
+    # true (default): pages/API responses (except /static) get Cache-Control: no-store,
+    # so no authenticated content is cached by the browser.
     HTTP_CACHE_NO_STORE: bool = _bool("HTTP_CACHE_NO_STORE", True)
-    # true (Standard): setzt Security-Header (CSP, X-Frame-Options: DENY,
-    # X-Content-Type-Options: nosniff, Referrer-Policy) auf alle Antworten.
+    # true (default): sets security headers (CSP, X-Frame-Options: DENY,
+    # X-Content-Type-Options: nosniff, Referrer-Policy) on all responses.
     SECURITY_HEADERS_ENABLED: bool = _bool("SECURITY_HEADERS_ENABLED", True)
 
     # --- Cloudflare ---
@@ -76,18 +83,18 @@ class Settings:
     # --- Collector ---
     COLLECTOR_INTERVAL_MINUTES: int = _int("COLLECTOR_INTERVAL_MINUTES", 10)
     COLLECTOR_RUN_ON_STARTUP: bool = _bool("COLLECTOR_RUN_ON_STARTUP", True)
-    # Rohdaten (10-Minuten-Auflösung) werden nach dieser Zeit zu Stunden-Rollups verdichtet
+    # Raw data (10-minute resolution) is compacted into hourly rollups after this time
     RAW_RETENTION_HOURS: int = _int("RAW_RETENTION_HOURS", 48)
-    # Stunden-Rollups werden nach dieser Zeit zu Tages-Rollups verdichtet
+    # Hourly rollups are compacted into daily rollups after this time
     HOURLY_RETENTION_DAYS: int = _int("HOURLY_RETENTION_DAYS", 30)
-    # Tages-Rollups (Langzeitverlauf) werden nach dieser Zeit gelöscht
+    # Daily rollups (long-term history) are deleted after this time
     DATA_RETENTION_DAYS: int = _int("DATA_RETENTION_DAYS", 730)
-    # Einzelne Threat-Events (Security-Feed) werden nach dieser Zeit gelöscht (Rohdaten, nicht aggregiert)
+    # Individual threat events (security feed) are deleted after this time (raw, not aggregated)
     THREAT_EVENT_RETENTION_DAYS: int = _int("THREAT_EVENT_RETENTION_DAYS", 30)
     DATABASE_PATH: str = os.getenv("DATABASE_PATH", "/app/data/cloudflare.db")
     CHART_DEFAULT_DATAPOINTS: int = _int("CHART_DEFAULT_DATAPOINTS", 288)
-    # Max. Anzahl Records, die eine einzelne Cloudflare-GraphQL-Antwort umfassen darf
-    # (Cloudflare-Hardlimit: 10.000 pro Response)
+    # Max. records a single Cloudflare GraphQL response may contain
+    # (Cloudflare hard limit: 10,000 per response)
     COLLECTOR_MAX_RECORDS_PER_QUERY: int = _int("COLLECTOR_MAX_RECORDS_PER_QUERY", 500)
 
     # --- Feature Toggles ---
@@ -97,16 +104,16 @@ class Settings:
     FEATURE_THREATS_CHART: bool = _bool("FEATURE_THREATS_CHART", True)
     FEATURE_SECURITY_FEED: bool = _bool("FEATURE_SECURITY_FEED", True)
     SECURITY_FEED_LIMIT: int = _int("SECURITY_FEED_LIMIT", 50)
-    # Zusätzliche Charts (alle Daten werden ohnehin gesammelt)
+    # Additional charts (all data is collected anyway, display only toggles)
     FEATURE_CACHE_DONUT_CHART: bool = _bool("FEATURE_CACHE_DONUT_CHART", True)      # Pie: Cached vs. Uncached
-    FEATURE_THREAT_DONUT_CHART: bool = _bool("FEATURE_THREAT_DONUT_CHART", True)    # Pie: Threat-Aktionen
-    FEATURE_VISITORS_CHART: bool = _bool("FEATURE_VISITORS_CHART", True)            # Unique Visitors
-    FEATURE_PAGEVIEWS_CHART: bool = _bool("FEATURE_PAGEVIEWS_CHART", True)          # Page Views
-    FEATURE_CACHED_UNCACHED_CHART: bool = _bool("FEATURE_CACHED_UNCACHED_CHART", True)  # Stacked Cached/Uncached
-    # Passive Analytics (read-only GraphQL httpRequestsAdaptiveGroups)
-    FEATURE_COUNTRY_CHART: bool = _bool("FEATURE_COUNTRY_CHART", True)              # Donut: Top-Herkunftsländer
-    FEATURE_STATUS_CHART: bool = _bool("FEATURE_STATUS_CHART", True)                # Chart: Statuscode-Gruppen (2xx-5xx)
-    # Aufbewahrung der passiven Analytics-Snapshots (Country/StatusCode) in Tagen
+    FEATURE_THREAT_DONUT_CHART: bool = _bool("FEATURE_THREAT_DONUT_CHART", True)    # Pie: threat actions
+    FEATURE_VISITORS_CHART: bool = _bool("FEATURE_VISITORS_CHART", True)            # Unique visitors
+    FEATURE_PAGEVIEWS_CHART: bool = _bool("FEATURE_PAGEVIEWS_CHART", True)          # Page views
+    FEATURE_CACHED_UNCACHED_CHART: bool = _bool("FEATURE_CACHED_UNCACHED_CHART", True)  # Stacked cached/uncached
+    # Passive analytics (read-only GraphQL httpRequestsAdaptiveGroups)
+    FEATURE_COUNTRY_CHART: bool = _bool("FEATURE_COUNTRY_CHART", True)              # Donut: top origin countries
+    FEATURE_STATUS_CHART: bool = _bool("FEATURE_STATUS_CHART", True)                # Chart: status code groups (2xx-5xx)
+    # Retention of passive analytics snapshots (countries/status codes) in days
     PASSIVE_RETENTION_DAYS: int = _int("PASSIVE_RETENTION_DAYS", 30)
     FEATURE_ACTION_CENTER: bool = _bool("FEATURE_ACTION_CENTER", True)
     FEATURE_QUICK_ACTIONS: bool = _bool("FEATURE_QUICK_ACTIONS", True)
@@ -116,29 +123,33 @@ class Settings:
     DASHBOARD_AUTO_REFRESH_SECONDS: int = _int("DASHBOARD_AUTO_REFRESH_SECONDS", 60)
 
     # --- Privacy / Masking ---
-    # true (Standard): IPs im Security-Feed werden maskiert (185.220.xxx.xxx).
-    # Auf der Admin-Seite kann die Maskierung temporär (nur Browser-Session)
-    # deaktiviert werden - das erfordert einen aktiven Admin-Grant.
+    # true (default): IPs in the security feed are masked (185.220.xxx.xxx).
+    # Masking can be temporarily disabled on the admin page (browser session only),
+    # which requires an active admin grant.
     MASK_IPS_IN_FEED: bool = _bool("MASK_IPS_IN_FEED", True)
 
-    # --- Webhook-Alerting (passiv, optional) ---
-    # WEBHOOK_ENABLED=true aktiviert Benachrichtigungen bei Threat-Spikes und 5xx-Fehlern.
+    # --- Webhook alerting (passive, optional) ---
+    # WEBHOOK_ENABLED=true enables notifications on threat spikes and 5xx errors.
     # WEBHOOK_TYPE: discord | telegram | gotify
     WEBHOOK_ENABLED: bool = _bool("WEBHOOK_ENABLED", False)
-    # Rückwärtskompatibilität: falls WEBHOOK_URL leer, wird NOTIFY_WEBHOOK_URL übernommen
+    # Backwards compatibility: if WEBHOOK_URL is empty, NOTIFY_WEBHOOK_URL is used
     WEBHOOK_URL: str = os.getenv("WEBHOOK_URL", os.getenv("NOTIFY_WEBHOOK_URL", ""))
     WEBHOOK_TYPE: str = os.getenv("WEBHOOK_TYPE", "discord").lower()
     WEBHOOK_ON_THREAT_SPIKE: bool = _bool("WEBHOOK_ON_THREAT_SPIKE", True)
     WEBHOOK_ON_5XX: bool = _bool("WEBHOOK_ON_5XX", True)
-    # Schwellenwerte (Fallback auf die alten NOTIFY_*-Variablen)
+    # Thresholds (falls back to the old NOTIFY_* variables)
     WEBHOOK_THREAT_THRESHOLD: int = _int("WEBHOOK_THREAT_THRESHOLD", _int("NOTIFY_THREAT_THRESHOLD", 100))
     WEBHOOK_5XX_THRESHOLD: int = _int("WEBHOOK_5XX_THRESHOLD", 50)
-    # Telegram: Chat-ID, falls sie nicht in der URL steht (Alternative: ?chat_id=... in WEBHOOK_URL)
+    # Send webhook notification after a cache purge quick action
+    NOTIFY_ON_CACHE_PURGE: bool = _bool("NOTIFY_ON_CACHE_PURGE", True)
+    # Send webhook notification when the Under Attack Mode is toggled
+    NOTIFY_ON_UNDER_ATTACK_TOGGLE: bool = _bool("NOTIFY_ON_UNDER_ATTACK_TOGGLE", True)
+    # Telegram: chat ID, unless it is part of the URL (alternative: ?chat_id=... in WEBHOOK_URL)
     WEBHOOK_TELEGRAM_CHAT_ID: str = os.getenv("WEBHOOK_TELEGRAM_CHAT_ID", "")
-    # Gotify: App-Token (X-Gotify-Key) - alternativ kann es in der URL stehen
+    # Gotify: app token (X-Gotify-Key) - alternatively it can be part of the URL
     WEBHOOK_GOTIFY_TOKEN: str = os.getenv("WEBHOOK_GOTIFY_TOKEN", "")
 
-    # --- Rate Limiting ---
+    # --- Rate limiting ---
     RATE_LIMIT_ENABLED: bool = _bool("RATE_LIMIT_ENABLED", True)
     RATE_LIMIT_LOGIN_ATTEMPTS_PER_MINUTE: int = _int("RATE_LIMIT_LOGIN_ATTEMPTS_PER_MINUTE", 10)
 
@@ -161,5 +172,10 @@ class Settings:
 
 settings = Settings()
 
-# Sicherstellen, dass das Datenverzeichnis existiert
+# If a plaintext PIN is configured, derive the bcrypt hash from it once at startup.
+# AUTH_PIN takes precedence over AUTH_PIN_HASH.
+if settings.AUTH_PIN:
+    settings.AUTH_PIN_HASH = bcrypt.hashpw(settings.AUTH_PIN.encode(), bcrypt.gensalt()).decode()
+
+# Make sure the data directory exists
 Path(settings.DATABASE_PATH).parent.mkdir(parents=True, exist_ok=True)

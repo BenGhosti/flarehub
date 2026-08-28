@@ -1,14 +1,14 @@
 """
-FlareHub – Datenbank-Setup (SQLite via SQLAlchemy).
+FlareHub – database setup (SQLite via SQLAlchemy).
 
-Datenmodell / Aufbewahrungsstrategie:
-- AnalyticsSnapshot: Rohdaten in COLLECTOR_INTERVAL_MINUTES-Auflösung (z.B. alle 10 Min).
-  Werden nach RAW_RETENTION_HOURS zu AnalyticsHourly verdichtet und danach gelöscht.
-- AnalyticsHourly: Stunden-Rollups. Werden nach HOURLY_RETENTION_DAYS zu AnalyticsDaily
-  verdichtet und danach gelöscht.
-- AnalyticsDaily: Tages-Rollups, bleiben DATA_RETENTION_DAYS lang erhalten (Langzeitverlauf,
-  sehr kompakt: 1 Zeile pro Tag).
-Damit bleibt die DB auch nach Jahren im Betrieb klein, ohne dass der Langzeit-Trend verloren geht.
+Data model / retention strategy:
+- AnalyticsSnapshot: raw data in COLLECTOR_INTERVAL_MINUTES resolution (e.g. every 10 min).
+  Compacted into AnalyticsHourly after RAW_RETENTION_HOURS, then deleted.
+- AnalyticsHourly: hourly rollups. Compacted into AnalyticsDaily after HOURLY_RETENTION_DAYS,
+  then deleted.
+- AnalyticsDaily: daily rollups, kept for DATA_RETENTION_DAYS (long-term history,
+  very compact: 1 row per day).
+This keeps the DB small even after years of operation, without losing the long-term trend.
 """
 from datetime import datetime, timedelta
 
@@ -26,7 +26,7 @@ Base = declarative_base()
 
 
 class AnalyticsSnapshot(Base):
-    """Rohdaten-Datenpunkt in COLLECTOR_INTERVAL_MINUTES-Auflösung."""
+    """Raw data point in COLLECTOR_INTERVAL_MINUTES resolution."""
     __tablename__ = "analytics_snapshots"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -43,8 +43,8 @@ class AnalyticsSnapshot(Base):
 
 
 class AnalyticsHourly(Base):
-    """Stunden-Rollup. unique_visitors ist ein Max-über-Stunde-Näherungswert (kein echtes
-    Distinct-Merge möglich, da Cloudflare nur bereits aggregierte uniques liefert)."""
+    """Hourly rollup. unique_visitors is a max-per-hour approximation (no true
+    distinct merge possible, since Cloudflare only delivers pre-aggregated uniques)."""
     __tablename__ = "analytics_hourly"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -61,7 +61,7 @@ class AnalyticsHourly(Base):
 
 
 class AnalyticsDaily(Base):
-    """Tages-Rollup für Langzeitverlauf, sehr kompakt."""
+    """Daily rollup for the long-term history, very compact."""
     __tablename__ = "analytics_daily"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -78,7 +78,7 @@ class AnalyticsDaily(Base):
 
 
 class ThreatEvent(Base):
-    """Einzelner geblockter Request (WAF / Firewall) für den Security-Feed."""
+    """Single blocked request (WAF / firewall) for the security feed."""
     __tablename__ = "threat_events"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -92,7 +92,7 @@ class ThreatEvent(Base):
 
 
 class ZoneSettingState(Base):
-    """Zuletzt bekannter Zustand von Zone-Settings, um UI-State zu cachen."""
+    """Last known state of zone settings, to cache UI state."""
     __tablename__ = "zone_setting_state"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -102,7 +102,7 @@ class ZoneSettingState(Base):
 
 
 class WebAuthnCredential(Base):
-    """Registrierte Passkeys/YubiKeys."""
+    """Registered passkeys/YubiKeys."""
     __tablename__ = "webauthn_credentials"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -116,7 +116,7 @@ class WebAuthnCredential(Base):
 
 
 class LoginAttempt(Base):
-    """Für Rate-Limiting und PIN-Lockout."""
+    """For rate limiting and PIN lockout."""
     __tablename__ = "login_attempts"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -127,7 +127,7 @@ class LoginAttempt(Base):
 
 
 class CollectorRun(Base):
-    """Log der Collector-Läufe, für Diagnose im UI (letzter Lauf, Fehler, Dauer)."""
+    """Log of collector runs, for diagnostics in the UI (last run, errors, duration)."""
     __tablename__ = "collector_runs"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -139,7 +139,7 @@ class CollectorRun(Base):
 
 
 class CountryStat(Base):
-    """Passive Analytics: Requests je Herkunftsland für ein Sammelintervall (letzte 24h)."""
+    """Passive analytics: requests per origin country for a collection interval (last 24h)."""
     __tablename__ = "country_stats"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -149,7 +149,7 @@ class CountryStat(Base):
 
 
 class StatusCodeStat(Base):
-    """Passive Analytics: Requests je Statuscode-Gruppe (2xx/3xx/4xx/5xx) je Intervall."""
+    """Passive analytics: requests per status code group (2xx/3xx/4xx/5xx) per interval."""
     __tablename__ = "status_code_stats"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -179,8 +179,8 @@ def _day_floor(dt: datetime) -> datetime:
 
 
 def rollup_raw_to_hourly(db, older_than_hours: int):
-    """Verdichtet AnalyticsSnapshot-Zeilen älter als older_than_hours zu AnalyticsHourly
-    und löscht danach die verdichteten Rohdaten."""
+    """Compacts AnalyticsSnapshot rows older than older_than_hours into AnalyticsHourly
+    and deletes the compacted raw data afterwards."""
     cutoff = datetime.utcnow() - timedelta(hours=older_than_hours)
     rows = (
         db.query(AnalyticsSnapshot)
@@ -231,8 +231,8 @@ def rollup_raw_to_hourly(db, older_than_hours: int):
 
 
 def rollup_hourly_to_daily(db, older_than_days: int):
-    """Verdichtet AnalyticsHourly-Zeilen älter als older_than_days zu AnalyticsDaily
-    und löscht danach die verdichteten Stunden-Rollups."""
+    """Compacts AnalyticsHourly rows older than older_than_days into AnalyticsDaily
+    and deletes the compacted hourly rollups afterwards."""
     cutoff = datetime.utcnow() - timedelta(days=older_than_days)
     rows = (
         db.query(AnalyticsHourly)
@@ -283,8 +283,8 @@ def rollup_hourly_to_daily(db, older_than_days: int):
 
 
 def cleanup_old_data(db):
-    """Führt die komplette Aufbewahrungs-Pipeline aus: Rohdaten -> Stunden -> Tage,
-    und löscht sehr alte Tages-Rollups sowie abgelaufene Threat-Events/Login-Versuche."""
+    """Runs the complete retention pipeline: raw -> hourly -> daily,
+    and deletes very old daily rollups as well as expired threat events/login attempts."""
     rollup_raw_to_hourly(db, settings.RAW_RETENTION_HOURS)
     rollup_hourly_to_daily(db, settings.HOURLY_RETENTION_DAYS)
 
@@ -308,8 +308,8 @@ def cleanup_old_data(db):
 
 
 def db_maintenance() -> dict:
-    """Führt SQLite-Wartung aus (VACUUM + ANALYZE) und gibt die Ergebnisse zurück.
-    VACUUM kompaktiert die Datei, ANALYZE aktualisiert die Query-Statistiken."""
+    """Runs SQLite maintenance (VACUUM + ANALYZE) and returns the results.
+    VACUUM compacts the file, ANALYZE updates query statistics."""
     import time as _time
 
     results = {}
@@ -333,7 +333,7 @@ def db_maintenance() -> dict:
 
 
 def get_storage_stats(db) -> dict:
-    """Zeilenzahlen je Tabelle für die Anzeige im UI (Settings-/Admin-Seite)."""
+    """Row counts per table for display in the UI (settings/admin page)."""
     return {
         "raw_snapshots": db.query(func.count(AnalyticsSnapshot.id)).scalar() or 0,
         "hourly_rollups": db.query(func.count(AnalyticsHourly.id)).scalar() or 0,

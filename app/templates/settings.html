@@ -1,20 +1,20 @@
 <!DOCTYPE html>
-<html lang="de" data-theme="{{ default_theme }}">
+<html lang="en" data-theme="{{ default_theme }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>{{ app_name }} - Einstellungen</title>
+    <title>{{ app_name }} - Settings</title>
     <link rel="stylesheet" href="/static/styles.css">
     <script src="/static/auth.js"></script>
     {% if auth_required %}
     <script>
-        // Kein Token im sessionStorage => neuer Browser-Besuch => Login erzwingen
+        // No token in sessionStorage => new browser visit => force login
         if (!getAuthToken()) window.location.replace('/login');
     </script>
     {% endif %}
 </head>
 <body>
-    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Theme wechseln">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle theme">
         <svg xmlns="http://www.w3.org/2000/svg" class="theme-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path class="moon" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
             <circle class="sun" cx="12" cy="12" r="5" style="display:none"/>
@@ -31,42 +31,42 @@
 
     <div class="container" style="max-width: 640px;">
         <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 1.5rem; flex-wrap:wrap; gap:0.5rem;">
-            <h1 style="font-size: 1.6rem; text-align:left;">Einstellungen</h1>
+            <h1 style="font-size: 1.6rem; text-align:left;">Settings</h1>
             <div style="display:flex; align-items:center; gap:0.75rem;">
                 <a href="/admin" style="font-size: 0.85rem; color: var(--highlight-color); text-decoration:none;">Admin →</a>
-                <a href="/" style="font-size: 0.85rem; color: var(--highlight-color); text-decoration:none;">← Zurück zum Dashboard</a>
+                <a href="/" style="font-size: 0.85rem; color: var(--highlight-color); text-decoration:none;">← Back to dashboard</a>
             </div>
         </div>
 
-        <!-- System & Datenspeicher (keine Admin-Freischaltung nötig) -->
+        <!-- System & data storage (no admin unlock required) -->
         <div class="card" style="text-align:left;">
-            <h3 style="margin-bottom: 1rem;">System &amp; Datenspeicher</h3>
+            <h3 style="margin-bottom: 1rem;">System &amp; Data Storage</h3>
             <div id="storage-stats-container">
-                <p style="opacity:0.6; font-size:0.9rem;">Lade Statistik...</p>
+                <p style="opacity:0.6; font-size:0.9rem;">Loading statistics...</p>
             </div>
             <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
                 <div>
-                    <span style="font-size: 0.85rem;">Letzter Collector-Lauf: <strong id="collector-last-run">–</strong></span>
+                    <span style="font-size: 0.85rem;">Last collector run: <strong id="collector-last-run">–</strong></span>
                     <p id="collector-last-message" style="font-size: 0.78rem; opacity: 0.65; margin-top: 2px;"></p>
                 </div>
-                <button id="btn-run-collector" type="button" class="btn-small">Jetzt ausführen</button>
+                <button id="btn-run-collector" type="button" class="btn-small">Run now</button>
             </div>
         </div>
 
         <div class="card" style="text-align:left;">
-            <h3 style="margin-bottom: 0.75rem;">Admin-Bereich</h3>
+            <h3 style="margin-bottom: 0.75rem;">Admin Area</h3>
             <p style="font-size: 0.85rem; opacity: 0.75; margin-bottom: 1rem;">
-                Passkey-Verwaltung, Datenbank-Wartung, Log-Viewer und Privacy-Optionen
-                sind in die dedizierte Admin-Seite umgezogen (geschützt durch das Admin-Token).
+                Passkey management, database maintenance, log viewer and privacy options
+                have moved to the dedicated admin page (protected by the admin token).
             </p>
             <a href="/admin" style="text-decoration:none;">
-                <button type="button" class="btn-small">Zum Admin-Bereich</button>
+                <button type="button" class="btn-small">Go to admin area</button>
             </a>
         </div>
     </div>
 
     <script>
-        // --- Theme (localStorage + Server-Default) ---
+        // --- Theme (localStorage + server default) ---
         const savedTheme = localStorage.getItem('theme') || '{{ default_theme }}';
         document.documentElement.setAttribute('data-theme', savedTheme);
         applyThemeIcon(savedTheme);
@@ -86,20 +86,20 @@
         document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
 
         function fmtRelativeTime(isoString) {
-            if (!isoString) return 'noch nie';
+            if (!isoString) return 'never';
             const diffMs = Date.now() - new Date(isoString + 'Z').getTime();
             const diffMin = Math.round(diffMs / 60000);
-            if (diffMin < 1) return 'gerade eben';
-            if (diffMin < 60) return `vor ${diffMin} Min.`;
+            if (diffMin < 1) return 'just now';
+            if (diffMin < 60) return `${diffMin} min. ago`;
             const diffH = Math.round(diffMin / 60);
-            return `vor ${diffH} Std.`;
+            return `${diffH} h ago`;
         }
 
         async function loadStorageStats() {
             const container = document.getElementById('storage-stats-container');
             const res = await authFetch('/api/collector/status');
             if (!res.ok) {
-                container.innerHTML = '<p style="opacity:0.6; font-size:0.9rem;">Konnte Statistik nicht laden.</p>';
+                container.innerHTML = '<p style="opacity:0.6; font-size:0.9rem;">Could not load statistics.</p>';
                 return;
             }
             const data = await res.json();
@@ -108,33 +108,33 @@
                 <div class="storage-grid">
                     <div class="storage-item">
                         <span class="storage-value">${s.raw_snapshots}</span>
-                        <span class="storage-label">Rohdatenpunkte<br><span style="opacity:0.6;">(10-Min-Auflösung)</span></span>
+                        <span class="storage-label">Raw data points<br><span style="opacity:0.6;">(10-min resolution)</span></span>
                     </div>
                     <div class="storage-item">
                         <span class="storage-value">${s.hourly_rollups}</span>
-                        <span class="storage-label">Stunden-Rollups</span>
+                        <span class="storage-label">Hourly rollups</span>
                     </div>
                     <div class="storage-item">
                         <span class="storage-value">${s.daily_rollups}</span>
-                        <span class="storage-label">Tages-Rollups<br><span style="opacity:0.6;">(Langzeitverlauf)</span></span>
+                        <span class="storage-label">Daily rollups<br><span style="opacity:0.6;">(long-term history)</span></span>
                     </div>
                     <div class="storage-item">
                         <span class="storage-value">${s.threat_events}</span>
-                        <span class="storage-label">Security-Feed-Einträge</span>
+                        <span class="storage-label">Security feed entries</span>
                     </div>
                     <div class="storage-item">
                         <span class="storage-value">${s.country_stats}</span>
-                        <span class="storage-label">Länder-Stats<br><span style="opacity:0.6;">(passiv)</span></span>
+                        <span class="storage-label">Country stats<br><span style="opacity:0.6;">(passive)</span></span>
                     </div>
                     <div class="storage-item">
                         <span class="storage-value">${s.status_code_stats}</span>
-                        <span class="storage-label">Statuscode-Stats<br><span style="opacity:0.6;">(passiv)</span></span>
+                        <span class="storage-label">Status code stats<br><span style="opacity:0.6;">(passive)</span></span>
                     </div>
                 </div>
                 <p style="font-size: 0.78rem; opacity: 0.6; margin-top: 0.75rem;">
-                    Rohdaten werden automatisch zu Stunden- und Tages-Rollups verdichtet
-                    (siehe RAW_RETENTION_HOURS / HOURLY_RETENTION_DAYS / DATA_RETENTION_DAYS in der .env),
-                    damit die Datenbank auch über Jahre hinweg klein bleibt.
+                    Raw data is automatically compacted into hourly and daily rollups
+                    (see RAW_RETENTION_HOURS / HOURLY_RETENTION_DAYS / DATA_RETENTION_DAYS in the .env),
+                    which keeps the database small even over years of operation.
                 </p>
             `;
 
@@ -142,23 +142,23 @@
             const lastMsgEl = document.getElementById('collector-last-message');
             if (data.last_run) {
                 lastRunEl.textContent = fmtRelativeTime(data.last_run.timestamp) +
-                    (data.last_run.success ? ' · OK' : ' · Fehler');
+                    (data.last_run.success ? ' · OK' : ' · Error');
                 lastRunEl.style.color = data.last_run.success ? 'var(--highlight-color)' : 'var(--danger-color)';
                 lastMsgEl.textContent = data.last_run.message || '';
             } else {
-                lastRunEl.textContent = 'noch nie';
+                lastRunEl.textContent = 'never';
             }
         }
 
         document.getElementById('btn-run-collector')?.addEventListener('click', async (e) => {
             e.target.disabled = true;
-            e.target.textContent = 'Läuft...';
+            e.target.textContent = 'Running...';
             try {
                 await authFetch('/api/collector/run-now', { method: 'POST' });
                 await loadStorageStats();
             } finally {
                 e.target.disabled = false;
-                e.target.textContent = 'Jetzt ausführen';
+                e.target.textContent = 'Run now';
             }
         });
 

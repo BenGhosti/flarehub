@@ -1,6 +1,6 @@
 """
 FlareHub – Cloudflare Analytics & Quick Actions Dashboard.
-FastAPI-Backend mit Jinja2-Templates, WebAuthn/PIN-Auth und Cloudflare GraphQL-Analytics.
+FastAPI backend with Jinja2 templates, WebAuthn/PIN auth and Cloudflare GraphQL analytics.
 """
 import logging
 import time
@@ -31,7 +31,7 @@ logger = logging.getLogger("flarehub")
 
 scheduler = AsyncIOScheduler()
 
-# Simple in-memory rate limiter für Login-Endpunkte
+# Simple in-memory rate limiter for login endpoints
 _rate_limit_buckets: dict = {}
 
 
@@ -39,12 +39,12 @@ _rate_limit_buckets: dict = {}
 async def lifespan(_app: FastAPI):
     init_db()
     if not settings.auth_disabled:
-        logger.info(f"Auth-Modus: {settings.AUTH_MODE}")
+        logger.info(f"Auth mode: {settings.AUTH_MODE}")
     else:
-        logger.warning("AUTH_MODE=none – Dashboard ist UNGESCHÜTZT erreichbar!")
+        logger.warning("AUTH_MODE=none – dashboard is UNPROTECTED!")
 
     if settings.SESSION_SECRET_KEY == "change-me-to-a-long-random-string":
-        logger.warning("SESSION_SECRET_KEY ist noch der Default-Wert – bitte in der .env auf einen zufälligen String setzen!")
+        logger.warning("SESSION_SECRET_KEY is still the default value – please set a random string in the .env!")
 
     scheduler.add_job(
         collector.fetch_analytics_and_store,
@@ -54,7 +54,7 @@ async def lifespan(_app: FastAPI):
         next_run_time=datetime.now() if settings.COLLECTOR_RUN_ON_STARTUP else None,
     )
     scheduler.start()
-    logger.info(f"{settings.APP_NAME} gestartet – Collector-Intervall: {settings.COLLECTOR_INTERVAL_MINUTES}min")
+    logger.info(f"{settings.APP_NAME} started – collector interval: {settings.COLLECTOR_INTERVAL_MINUTES}min")
     yield
     scheduler.shutdown()
 
@@ -66,12 +66,13 @@ templates = Jinja2Templates(directory="app/templates")
 
 @app.middleware("http")
 async def csrf_origin_check(request: Request, call_next):
-    """Leichtgewichtiger CSRF-Schutz für zustandsverändernde Requests.
+    """Lightweight CSRF protection for state-changing requests.
 
-    Bei POST/PUT/PATCH/DELETE wird geprüft, dass ein gesendeter Origin-Header zum
-    Host-Header passt (Same-Origin). Requests ohne Origin-Header (curl, Server-to-Server)
-    bleiben erlaubt. Zusammen mit dem SameSite=Lax-Cookie verhindert das Cross-Site-
-    Requests gegen Quick Actions / Passkey-Verwaltung."""
+    For POST/PUT/PATCH/DELETE it checks that a sent Origin header matches the
+    Host header (same origin). Requests without an Origin header (curl, server-to-server)
+    remain allowed. Together with the stateless Bearer token this prevents cross-site
+    requests against quick actions / passkey management."""
+
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
         origin = request.headers.get("origin")
         if origin:
@@ -81,18 +82,18 @@ async def csrf_origin_check(request: Request, call_next):
             except ValueError:
                 origin_host = ""
             if origin_host and origin_host != host:
-                return JSONResponse(status_code=403, content={"detail": "Cross-Origin Request abgelehnt"})
+                return JSONResponse(status_code=403, content={"detail": "Cross-Origin request rejected"})
     return await call_next(request)
 
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
-    """Setzt Security-Header auf alle Antworten (abschaltbar per .env).
+    """Sets security headers on all responses (disable via .env).
 
-    - CSP: nur eigene Ressourcen (inline-Script/Style erlaubt, keine externen Origins)
-    - X-Frame-Options: DENY gegen Clickjacking
-    - X-Content-Type-Options: nosniff gegen MIME-Sniffing
-    - Referrer-Policy: no-referrer (keine Leaks an fremde Seiten)"""
+    - CSP: only own resources (inline scripts/styles allowed, no external origins)
+    - X-Frame-Options: DENY against clickjacking
+    - X-Content-Type-Options: nosniff against MIME sniffing
+    - Referrer-Policy: no-referrer (no leaks to third-party pages)"""
     response = await call_next(request)
     if settings.SECURITY_HEADERS_ENABLED:
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -114,10 +115,10 @@ async def security_headers(request: Request, call_next):
 
 @app.middleware("http")
 async def no_store_cache(request: Request, call_next):
-    """Verhindert Browser-Caching von authentifiziertem Inhalt (Seiten + APIs).
+    """Prevents browser caching of authenticated content (pages + APIs).
 
-    /static-Assets duerfen gecacht werden, alles andere bekommt Cache-Control: no-store.
-    Abschaltbar ueber HTTP_CACHE_NO_STORE=false in der .env."""
+    /static assets may be cached, everything else gets Cache-Control: no-store.
+    Disable via HTTP_CACHE_NO_STORE=false in the .env."""
     response = await call_next(request)
     if settings.HTTP_CACHE_NO_STORE and not request.url.path.startswith("/static"):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
@@ -139,7 +140,7 @@ def _rate_limit_ok(ip: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Auth Endpoints
+# Auth endpoints
 # ---------------------------------------------------------------------------
 class PinPayload(BaseModel):
     pin: str
@@ -186,7 +187,7 @@ async def auth_status(request: Request, db: Session = Depends(get_db)):
 async def verify_pin_endpoint(payload: PinPayload, request: Request):
     client_ip = request.client.host if request.client else "unknown"
     if not _rate_limit_ok(client_ip):
-        raise HTTPException(status_code=429, detail="Zu viele Anfragen. Bitte kurz warten.")
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
 
     ok, message = auth.verify_pin(payload.pin, client_ip)
 
@@ -200,15 +201,15 @@ async def verify_pin_endpoint(payload: PinPayload, request: Request):
     if not ok:
         raise HTTPException(status_code=401, detail=message)
 
-    # Kein Cookie: kurzes signiertes Token zurückgeben, Frontend legt es in den
-    # sessionStorage und sendet es als Bearer-Header mit.
+    # No cookie: return a short signed token, the frontend stores it in the
+    # sessionStorage and sends it as a Bearer header.
     return {"success": True, "token": auth.create_access_token()}
 
 
 @app.post("/api/passkey/auth-options")
 async def passkey_auth_options(db: Session = Depends(get_db)):
     if not settings.auth_passkey_enabled:
-        raise HTTPException(status_code=403, detail="Passkey-Login ist deaktiviert")
+        raise HTTPException(status_code=403, detail="Passkey login is disabled")
     options_json = auth.build_authentication_options(db)
     return JSONResponse(content=options_json, media_type="application/json")
 
@@ -217,7 +218,7 @@ async def passkey_auth_options(db: Session = Depends(get_db)):
 async def passkey_auth_verify(payload: PasskeyVerifyPayload, request: Request, db: Session = Depends(get_db)):
     client_ip = request.client.host if request.client else "unknown"
     if not _rate_limit_ok(client_ip):
-        raise HTTPException(status_code=429, detail="Zu viele Anfragen. Bitte kurz warten.")
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
 
     ok, message = auth.verify_passkey_authentication(db, payload.credential)
 
@@ -231,24 +232,24 @@ async def passkey_auth_verify(payload: PasskeyVerifyPayload, request: Request, d
 
 
 def require_admin_grant(request: Request) -> bool:
-    """Dependency: verlangt zusätzlich zum Login-Token ein gültiges Admin-Token-Grant.
-    Schützt die Passkey-Verwaltung (Hinzufügen/Löschen) getrennt vom normalen Login."""
+    """Dependency: requires a valid admin token grant in addition to the login token.
+    Protects passkey management (add/delete) separately from the normal login."""
     auth.get_current_session(request)
     grant = request.headers.get("x-admin-grant", "")
     if not grant or not auth.verify_admin_token_grant(grant):
-        raise HTTPException(status_code=403, detail="Admin-Token erforderlich")
+        raise HTTPException(status_code=403, detail="Admin token required")
     return True
 
 
 @app.post("/api/admin/verify")
 async def admin_verify(payload: AdminTokenPayload, request: Request):
-    """Prüft das Admin-Token aus der .env und stellt bei Erfolg ein kurzlebiges Grant aus.
-    Das Grant wird NICHT gecacht: es ist nur 10 Minuten gültig und lebt ausschliesslich
-    im sessionStorage des Browsers."""
+    """Checks the admin token from the .env and issues a short-lived grant on success.
+    The grant is NOT cached: it is valid for 10 minutes only and lives exclusively
+    in the browser's sessionStorage."""
     auth.get_current_session(request)
     client_ip = request.client.host if request.client else "unknown"
     if not _rate_limit_ok(client_ip):
-        raise HTTPException(status_code=429, detail="Zu viele Anfragen. Bitte kurz warten.")
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait a moment.")
 
     ok, message = auth.verify_admin_token(payload.token, client_ip)
     if not ok:
@@ -265,7 +266,7 @@ async def admin_status(request: Request):
     reveal = request.headers.get("x-reveal-ips", "") == "1"
     return {
         "admin_unlocked": unlocked,
-        # Maskierung aktiv, solange sie nicht über das Admin-Grant temporär deaktiviert wurde
+        # Masking is active unless temporarily disabled via the admin grant
         "mask_ips": bool(settings.MASK_IPS_IN_FEED) and not (unlocked and reveal),
         "mask_ips_configured": bool(settings.MASK_IPS_IN_FEED),
         "webhook_enabled": settings.WEBHOOK_ENABLED,
@@ -279,8 +280,8 @@ async def admin_logs(
     db: Session = Depends(get_db),
     limit: int = 50,
 ):
-    """Read-only Log-Viewer: letzte Collector-Läufe. Secrets/Tokens werden zwingend
-    als *** maskiert, bevor die Meldungen die API verlassen."""
+    """Read-only log viewer: recent collector runs. Secrets/tokens are always masked
+    as *** before the messages leave the API."""
     limit = max(1, min(limit, 200))
     rows = (
         db.query(CollectorRun)
@@ -302,13 +303,13 @@ async def admin_logs(
 
 @app.post("/api/admin/db-maintenance")
 async def admin_db_maintenance(_admin: bool = Depends(require_admin_grant)):
-    """Manuelle SQLite-Wartung: VACUUM (kompaktiert) + ANALYZE (Statistiken)."""
+    """Manual SQLite maintenance: VACUUM (compacts) + ANALYZE (statistics)."""
     return db_maintenance()
 
 
 @app.post("/api/passkey/register-options")
 async def passkey_register_options(_admin: bool = Depends(require_admin_grant), db: Session = Depends(get_db)):
-    """Geschützt durch Session + Admin-Token-Grant. Startet die Registrierung eines neuen Passkeys."""
+    """Protected by session + admin token grant. Starts the registration of a new passkey."""
     options_json = auth.build_registration_options(db)
     return JSONResponse(content=options_json, media_type="application/json")
 
@@ -344,8 +345,8 @@ async def passkey_delete(
 
 @app.post("/api/auth/logout")
 async def logout():
-    """Stateless Logout: Es gibt serverseitig nichts zu löschen (kein Cookie, kein
-    Server-Session-Store). Das Frontend verwirft den Token aus dem sessionStorage."""
+    """Stateless logout: there is nothing to delete server-side (no cookie, no
+    server session store). The frontend discards the token from the sessionStorage."""
     return {"success": True}
 
 
@@ -366,9 +367,9 @@ async def login_page(request: Request):
 
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
-    # Das Seiten-Skelett enthält keine sensiblen Daten (alle Daten kommen über die
-    # API mit Bearer-Token). Der Token-Check findet im Frontend statt:
-    # Ohne gültiges Token leitet die Seite sofort auf /login um.
+    # The page skeleton contains no sensitive data (all data comes via the API with
+    # a Bearer token). The token check happens in the frontend:
+    # Without a valid token, the page immediately redirects to /login.
     return templates.TemplateResponse(request, "settings.html", {
         "app_name": settings.APP_NAME,
         "default_theme": settings.DEFAULT_THEME,
@@ -392,8 +393,8 @@ async def actions_page(request: Request):
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_page(request: Request):
-    """Dedizierte Admin-Ansicht: Passkey-Verwaltung, DB-Tools, Log-Viewer, Privacy.
-    Alle Admin-APIs verlangen das ADMIN_TOKEN (Grant im sessionStorage)."""
+    """Dedicated admin view: passkey management, DB tools, log viewer, privacy.
+    All admin APIs require the ADMIN_TOKEN (grant in the sessionStorage)."""
     return templates.TemplateResponse(request, "admin.html", {
         "app_name": settings.APP_NAME,
         "default_theme": settings.DEFAULT_THEME,
@@ -431,7 +432,7 @@ async def dashboard_page(request: Request):
 
 
 # ---------------------------------------------------------------------------
-# Analytics Data API
+# Analytics data API
 # ---------------------------------------------------------------------------
 @app.get("/api/analytics/timeseries")
 async def analytics_timeseries(
@@ -439,10 +440,10 @@ async def analytics_timeseries(
     _auth: bool = Depends(auth.get_current_session),
     db: Session = Depends(get_db),
 ):
-    """Liefert Zeitreihendaten für den gewählten Zeitraum. Wählt automatisch die passende
-    Auflösung: kurze Zeiträume nutzen Rohdaten (10-Min-Auflösung), lange nutzen die
-    Stunden- bzw. Tages-Rollups, damit die Antwort klein bleibt und alte Daten trotz
-    Verdichtung weiterhin sichtbar sind."""
+    """Returns time series data for the selected period. Automatically picks the matching
+    resolution: short periods use raw data (10-minute resolution), long periods use the
+    hourly/daily rollups, so the response stays small and old data remains visible
+    despite compaction."""
     now = datetime.utcnow()
     range_map = {
         "6h": (timedelta(hours=6), "raw"),
@@ -459,9 +460,9 @@ async def analytics_timeseries(
     bw_total, bw_cached, threats, uniques, page_views = [], [], [], [], []
 
     if resolution == "raw":
-        # Rohdaten liegen nur für die letzten RAW_RETENTION_HOURS vor; ältere Punkte im
-        # gewählten Fenster kommen zusätzlich aus den Stunden-Rollups, damit z.B. bei
-        # 24h-Ansicht kurz nach dem Verdichtungslauf keine Lücke entsteht.
+        # Raw data only covers the last RAW_RETENTION_HOURS; older points in the
+        # selected window come from the hourly rollups, so e.g. in the 24h view no
+        # gap appears shortly after a compaction run.
         raw_rows = (
             db.query(AnalyticsSnapshot)
             .filter(AnalyticsSnapshot.timestamp >= since)
@@ -555,8 +556,8 @@ async def analytics_donuts(
     _auth: bool = Depends(auth.get_current_session),
     db: Session = Depends(get_db),
 ):
-    """Aggregierte Werte für die Donut-Charts (Cache-Split + Threat-Aktionen) über den
-    gewählten Zeitraum."""
+    """Aggregated values for the donut charts (cache split + threat actions) over the
+    selected period."""
     now = datetime.utcnow()
     range_map = {
         "6h": (timedelta(hours=6), "raw"),
@@ -579,13 +580,13 @@ async def analytics_donuts(
     cached = sum(r.requests_cached for r in rows)
     uncached = sum(r.requests_uncached for r in rows)
 
-    # Threat-Aktionen aus den einzelnen Feed-Events. Nur verfügbar, solange die
-    # Ereignisse nicht durch die Retention (THREAT_EVENT_RETENTION_DAYS) gelöscht sind -
-    # für lange Zeiträume ist das daher eine Untermenge der aggregierten Threats.
+    # Threat actions from the individual feed events. Only available as long as the
+    # events are not deleted by the retention (THREAT_EVENT_RETENTION_DAYS) - for long
+    # periods this is therefore a subset of the aggregated threats.
     action_counts: dict[str, int] = {}
     event_rows = db.query(ThreatEvent).filter(ThreatEvent.timestamp >= since).all()
     for e in event_rows:
-        action = (e.action or "unbekannt").lower()
+        action = (e.action or "unknown").lower()
         action_counts[action] = action_counts.get(action, 0) + 1
 
     return {
@@ -603,8 +604,8 @@ async def analytics_countries(
     _auth: bool = Depends(auth.get_current_session),
     db: Session = Depends(get_db),
 ):
-    """Top-Herkunftsländer aus dem neuesten passiven Analytics-Snapshot (letzte 24h).
-    Liefert die Top 10 plus einen 'Andere'-Sammelposten für den Donut-Chart."""
+    """Top origin countries from the latest passive analytics snapshot (last 24h).
+    Returns the top 10 plus an 'Other' bucket for the donut chart."""
     latest = db.query(CountryStat).order_by(desc(CountryStat.period_start)).first()
     if not latest:
         return {"available": False, "countries": [], "period_start": None}
@@ -623,7 +624,7 @@ async def analytics_countries(
         else:
             other += r.requests
     if other > 0:
-        countries.append({"country": "Andere", "requests": other})
+        countries.append({"country": "Other", "requests": other})
 
     return {
         "available": True,
@@ -637,7 +638,7 @@ async def analytics_status_codes(
     _auth: bool = Depends(auth.get_current_session),
     db: Session = Depends(get_db),
 ):
-    """HTTP-Statuscode-Gruppen (2xx/3xx/4xx/5xx) aus dem neuesten passiven Snapshot."""
+    """HTTP status code groups (2xx/3xx/4xx/5xx) from the latest passive snapshot."""
     latest = db.query(StatusCodeStat).order_by(desc(StatusCodeStat.period_start)).first()
     if not latest:
         return {"available": False, "groups": []}
@@ -691,14 +692,14 @@ async def collector_status(
     _auth: bool = Depends(auth.get_current_session),
     db: Session = Depends(get_db),
 ):
-    """Letzter Collector-Lauf und Speicherstatistik – für Diagnose auf der Einstellungsseite."""
+    """Last collector run and storage statistics – for diagnostics on the settings page."""
     last_run = db.query(CollectorRun).order_by(desc(CollectorRun.timestamp)).first()
     storage = get_storage_stats(db)
     return {
         "last_run": {
             "timestamp": last_run.timestamp.isoformat() if last_run else None,
             "success": last_run.success if last_run else None,
-            "message": last_run.message if last_run else "Noch kein Lauf erfolgt",
+            "message": last_run.message if last_run else "No run yet",
             "duration_ms": last_run.duration_ms if last_run else None,
             "records_fetched": last_run.records_fetched if last_run else None,
         } if last_run else None,
@@ -717,9 +718,9 @@ async def security_feed(request: Request, _auth: bool = Depends(auth.get_current
         .all()
     )
 
-    # Privacy: IPs werden maskiert, sofern MASK_IPS_IN_FEED aktiv ist. Die Maskierung
-    # kann auf der Admin-Seite temporär (nur für die aktive Browser-Session) deaktiviert
-    # werden - das erfordert einen gültigen Admin-Grant.
+    # Privacy: IPs are masked if MASK_IPS_IN_FEED is active. Masking can be temporarily
+    # disabled on the admin page (only for the active browser session) - this requires
+    # a valid admin grant.
     grant = request.headers.get("x-admin-grant", "")
     reveal_ips = (
         request.headers.get("x-reveal-ips", "") == "1"
@@ -742,7 +743,7 @@ async def security_feed(request: Request, _auth: bool = Depends(auth.get_current
 
 
 # ---------------------------------------------------------------------------
-# Quick Actions API
+# Quick actions API
 # ---------------------------------------------------------------------------
 class ToggleGeneric(BaseModel):
     enabled: bool
@@ -756,7 +757,7 @@ def _require_zone_configured():
     if not settings.CLOUDFLARE_API_TOKEN or not settings.CLOUDFLARE_ZONE_ID:
         raise HTTPException(
             status_code=400,
-            detail="Cloudflare nicht konfiguriert (CLOUDFLARE_API_TOKEN / CLOUDFLARE_ZONE_ID in der .env setzen)",
+            detail="Cloudflare not configured (set CLOUDFLARE_API_TOKEN / CLOUDFLARE_ZONE_ID in the .env)",
         )
 
 
@@ -773,7 +774,7 @@ async def zone_status(_auth: bool = Depends(auth.get_current_session)):
 @app.post("/api/zone/dev-mode")
 async def toggle_dev_mode(payload: ToggleGeneric, _auth: bool = Depends(auth.get_current_session)):
     if not settings.FEATURE_DEV_MODE_TOGGLE:
-        raise HTTPException(status_code=403, detail="Feature deaktiviert")
+        raise HTTPException(status_code=403, detail="Feature disabled")
     _require_zone_configured()
     ok, message = await collector.toggle_development_mode(payload.enabled)
     if not ok:
@@ -784,7 +785,7 @@ async def toggle_dev_mode(payload: ToggleGeneric, _auth: bool = Depends(auth.get
 @app.post("/api/zone/under-attack")
 async def toggle_under_attack(payload: ToggleGeneric, _auth: bool = Depends(auth.get_current_session)):
     if not settings.FEATURE_UNDER_ATTACK_TOGGLE:
-        raise HTTPException(status_code=403, detail="Feature deaktiviert")
+        raise HTTPException(status_code=403, detail="Feature disabled")
     _require_zone_configured()
     ok, message = await collector.toggle_under_attack_mode(payload.enabled)
     if not ok:
@@ -795,7 +796,7 @@ async def toggle_under_attack(payload: ToggleGeneric, _auth: bool = Depends(auth
 @app.post("/api/zone/purge-cache")
 async def purge_cache_endpoint(_auth: bool = Depends(auth.get_current_session)):
     if not settings.FEATURE_PURGE_CACHE:
-        raise HTTPException(status_code=403, detail="Feature deaktiviert")
+        raise HTTPException(status_code=403, detail="Feature disabled")
     _require_zone_configured()
     ok, message = await collector.purge_cache(purge_everything=True)
     if not ok:
@@ -805,16 +806,16 @@ async def purge_cache_endpoint(_auth: bool = Depends(auth.get_current_session)):
 
 @app.post("/api/zone/purge-cache-urls")
 async def purge_cache_urls_endpoint(payload: PurgeUrlsPayload, _auth: bool = Depends(auth.get_current_session)):
-    """Leert den Cache nur für ausgewählte URLs (unkritische Action-Center-Aktion)."""
+    """Purges the cache only for selected URLs (uncritical action-center action)."""
     if not settings.FEATURE_PURGE_CACHE:
-        raise HTTPException(status_code=403, detail="Feature deaktiviert")
+        raise HTTPException(status_code=403, detail="Feature disabled")
     _require_zone_configured()
 
     urls = [u.strip() for u in payload.urls if u and u.strip()]
     if not urls:
-        raise HTTPException(status_code=400, detail="Keine URLs angegeben")
+        raise HTTPException(status_code=400, detail="No URLs provided")
     if len(urls) > 30:
-        raise HTTPException(status_code=400, detail="Cloudflare erlaubt max. 30 URLs pro Purge-Aufruf")
+        raise HTTPException(status_code=400, detail="Cloudflare allows max. 30 URLs per purge request")
 
     ok, message = await collector.purge_cache(purge_everything=False, files=urls)
     if not ok:
@@ -824,16 +825,16 @@ async def purge_cache_urls_endpoint(payload: PurgeUrlsPayload, _auth: bool = Dep
 
 @app.get("/api/zone/settings-summary")
 async def zone_settings_summary(_auth: bool = Depends(auth.get_current_session)):
-    """Read-only Übersicht unkritischer Zone-Settings für das Action Center."""
+    """Read-only overview of uncritical zone settings for the action center."""
     if not settings.FEATURE_ACTION_CENTER:
-        raise HTTPException(status_code=403, detail="Feature deaktiviert")
+        raise HTTPException(status_code=403, detail="Feature disabled")
     return await collector.get_zone_settings_summary()
 
 
 @app.post("/api/collector/run-now")
 async def collector_run_now(_auth: bool = Depends(auth.get_current_session)):
-    """Löst manuell einen Collector-Lauf aus (inkl. passiver Analytics), z.B. zum
-    Testen der Cloudflare-Zugangsdaten. Rein lesend, keine schreibenden Aktionen."""
+    """Triggers a collector run manually (incl. passive analytics), e.g. to test the
+    Cloudflare credentials. Read-only, no write actions are triggered."""
     await collector.fetch_analytics_and_store()
     if settings.FEATURE_COUNTRY_CHART or settings.FEATURE_STATUS_CHART:
         await collector.fetch_passive_analytics_and_store()

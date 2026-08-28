@@ -1,6 +1,6 @@
 """
-FlareHub – Authentifizierung: PIN + WebAuthn/Passkey.
-Verhalten wird komplett über AUTH_MODE in der .env gesteuert (pin | passkey | both | none).
+FlareHub – authentication: PIN + WebAuthn/Passkey.
+Behavior is fully controlled by AUTH_MODE in the .env (pin | passkey | both | none).
 """
 import hashlib
 import hmac
@@ -37,19 +37,19 @@ from app.database import WebAuthnCredential
 
 serializer = URLSafeTimedSerializer(settings.SESSION_SECRET_KEY, salt="flarehub-session")
 
-# In-memory Challenge-Store (kurzlebig, kein Persistenzbedarf)
+# In-memory challenge store (short-lived, no persistence needed)
 _pending_challenges: dict = {}
-# In-memory PIN-Lockout-Tracking je IP
+# In-memory PIN lockout tracking per IP
 _pin_failures: dict = {}
 
 
 # ---------------------------------------------------------------------------
-# Stateless Access-Token (kein Session-Cookie!)
+# Stateless access token (no session cookie!)
 #
-# Sicherheitsmodell: Nach PIN-/Passkey-Login erhält das Frontend ein kurzlebiges,
-# signiertes Token und legt es NUR im sessionStorage ab (pro Browser-Session).
-# Es gibt keine Cookies – bei jedem neuen Browser-Besuch ist der Token weg und
-# der Nutzer muss sich erneut per PIN oder Passkey anmelden.
+# Security model: after PIN/passkey login, the frontend receives a short-lived,
+# signed token and stores it ONLY in the sessionStorage (per browser session).
+# There are no cookies – on every new browser visit the token is gone and the
+# user must log in again with PIN or passkey.
 # ---------------------------------------------------------------------------
 def create_access_token() -> str:
     return serializer.dumps({"authenticated": True, "ts": time.time()})
@@ -71,8 +71,8 @@ def extract_bearer_token(request: Request) -> str | None:
 
 
 def get_current_session(request: Request) -> bool:
-    """Dependency: prüft das Bearer-Token aus dem Authorization-Header.
-    Bei AUTH_MODE=none immer True."""
+    """Dependency: checks the Bearer token from the Authorization header.
+    Always True when AUTH_MODE=none."""
     if settings.auth_disabled:
         return True
     token = extract_bearer_token(request)
@@ -112,14 +112,14 @@ def _clear_pin_failures(ip: str):
 
 def verify_pin(pin: str, client_ip: str) -> tuple[bool, str]:
     if not settings.auth_pin_enabled:
-        return False, "PIN-Login ist deaktiviert"
+        return False, "PIN login is disabled"
 
     locked, remaining = _is_locked_out(client_ip)
     if locked:
-        return False, f"Zu viele Fehlversuche. Erneut versuchen in {remaining}s"
+        return False, f"Too many failed attempts. Try again in {remaining}s"
 
     if not settings.AUTH_PIN_HASH:
-        return False, "Kein PIN konfiguriert (AUTH_PIN_HASH fehlt in .env)"
+        return False, "No PIN configured (set AUTH_PIN or AUTH_PIN_HASH in .env)"
 
     try:
         valid = bcrypt.checkpw(pin.encode(), settings.AUTH_PIN_HASH.encode())
@@ -131,13 +131,13 @@ def verify_pin(pin: str, client_ip: str) -> tuple[bool, str]:
         return True, "OK"
     else:
         _register_pin_failure(client_ip)
-        return False, "Falsche PIN"
+        return False, "Incorrect PIN"
 
 
 # ---------------------------------------------------------------------------
-# Admin-Token (Passkey-Verwaltung)
+# Admin token (passkey management)
 # ---------------------------------------------------------------------------
-# In-memory Lockout-Tracking für Admin-Token-Versuche, je IP (analog zum PIN-Lockout)
+# In-memory lockout tracking for admin token attempts, per IP (similar to PIN lockout)
 _admin_token_failures: dict = {}
 
 
@@ -157,17 +157,17 @@ def _admin_locked_out(ip: str) -> tuple[bool, int]:
 
 
 def verify_admin_token(token: str, client_ip: str) -> tuple[bool, str]:
-    """Prüft das Admin-Token aus der .env. Getrennt vom normalen Login gedacht:
-    schützt zusätzlich die Passkey-Verwaltung, auch wenn bereits eine Session besteht."""
+    """Checks the admin token from the .env. Intended as a separate hurdle from the
+    normal login: it additionally protects passkey management, even with an active session."""
     if not settings.ADMIN_TOKEN:
-        return False, "Kein Admin-Token konfiguriert (ADMIN_TOKEN fehlt in .env)"
+        return False, "No admin token configured (set ADMIN_TOKEN in .env)"
 
     locked, remaining = _admin_locked_out(client_ip)
     if locked:
-        return False, f"Zu viele Fehlversuche. Erneut versuchen in {remaining}s"
+        return False, f"Too many failed attempts. Try again in {remaining}s"
 
     if not token:
-        return False, "Admin-Token erforderlich"
+        return False, "Admin token required"
 
     valid = hmac.compare_digest(token, settings.ADMIN_TOKEN)
 
@@ -177,12 +177,12 @@ def verify_admin_token(token: str, client_ip: str) -> tuple[bool, str]:
     else:
         count, first_ts = _admin_token_failures.get(client_ip, (0, time.time()))
         _admin_token_failures[client_ip] = (count + 1, first_ts)
-        return False, "Ungültiges Admin-Token"
+        return False, "Invalid admin token"
 
 
 def create_admin_token_grant() -> str:
-    """Kurzlebiges, signiertes Token, das nach erfolgreicher Admin-Token-Eingabe
-    ausgestellt wird und die Passkey-Verwaltungsendpunkte für kurze Zeit freischaltet."""
+    """Short-lived, signed token issued after a successful admin token entry that
+    unlocks the passkey management endpoints for a short time."""
     return serializer.dumps({"admin_grant": True, "ts": time.time()})
 
 
@@ -216,10 +216,10 @@ def _user_verification():
 
 
 def _user_handle() -> bytes:
-    """Stabiler User-Handle für den einzelnen Admin-Account.
+    """Stable user handle for the single admin account.
 
-    Wird deterministisch aus SESSION_SECRET_KEY abgeleitet, damit alle registrierten
-    Passkeys denselben UserHandle haben und keine zufällig wechselnde ID entsteht."""
+    Derive it deterministically from SESSION_SECRET_KEY so that all registered
+    passkeys share the same user handle and no randomly changing ID is created."""
     return hashlib.sha256(settings.SESSION_SECRET_KEY.encode()).digest()[:32]
 
 
@@ -247,8 +247,8 @@ def build_registration_options(db: Session, username: str = "admin"):
         authenticator_selection=AuthenticatorSelectionCriteria(**selection_kwargs),
     )
     _pending_challenges["register"] = options.challenge
-    # options_to_json liefert einen String; als Dict zurückgeben, damit
-    # JSONResponse im Router nicht doppelt encodiert.
+    # options_to_json returns a string; return it as a dict so that the
+    # JSONResponse in the router does not double-encode it.
     return json.loads(options_to_json(options))
 
 
@@ -264,17 +264,17 @@ def build_authentication_options(db: Session):
         user_verification=_user_verification(),
     )
     _pending_challenges["auth"] = options.challenge
-    # siehe build_registration_options: Dict statt String zurückgeben
+    # see build_registration_options: return a dict instead of a string
     return json.loads(options_to_json(options))
 
 
 def verify_passkey_authentication(db: Session, credential_json: dict) -> tuple[bool, str]:
     if not settings.auth_passkey_enabled:
-        return False, "Passkey-Login ist deaktiviert"
+        return False, "Passkey login is disabled"
 
     challenge = _pending_challenges.get("auth")
     if not challenge:
-        return False, "Kein aktiver Login-Versuch gefunden. Bitte erneut starten."
+        return False, "No active login attempt found. Please try again."
 
     try:
         cred = parse_authentication_credential_json(json.dumps(credential_json))
@@ -282,7 +282,7 @@ def verify_passkey_authentication(db: Session, credential_json: dict) -> tuple[b
 
         stored = db.query(WebAuthnCredential).filter_by(credential_id=cred_id_hex).first()
         if not stored:
-            return False, "Unbekannter Passkey"
+            return False, "Unknown passkey"
 
         result = verify_authentication_response(
             credential=cred,
@@ -301,13 +301,13 @@ def verify_passkey_authentication(db: Session, credential_json: dict) -> tuple[b
         return True, "OK"
     except Exception as e:
         _pending_challenges.pop("auth", None)
-        return False, f"Passkey-Verifizierung fehlgeschlagen: {str(e)}"
+        return False, f"Passkey verification failed: {str(e)}"
 
 
 def store_new_credential(db: Session, credential_json: dict, nickname: str = None) -> tuple[bool, str]:
     challenge = _pending_challenges.get("register")
     if not challenge:
-        return False, "Keine aktive Registrierung gefunden"
+        return False, "No active registration found"
 
     try:
         cred = parse_registration_credential_json(json.dumps(credential_json))
@@ -333,7 +333,7 @@ def store_new_credential(db: Session, credential_json: dict, nickname: str = Non
         return True, "OK"
     except Exception as e:
         _pending_challenges.pop("register", None)
-        return False, f"Registrierung fehlgeschlagen: {str(e)}"
+        return False, f"Registration failed: {str(e)}"
 
 
 def list_credentials(db: Session) -> list[dict]:
@@ -354,7 +354,7 @@ def list_credentials(db: Session) -> list[dict]:
 def delete_credential(db: Session, credential_row_id: int) -> tuple[bool, str]:
     cred = db.query(WebAuthnCredential).filter_by(id=credential_row_id).first()
     if not cred:
-        return False, "Passkey nicht gefunden"
+        return False, "Passkey not found"
     db.delete(cred)
     db.commit()
     return True, "OK"

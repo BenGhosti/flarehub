@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de" data-theme="{{ default_theme }}">
+<html lang="en" data-theme="{{ default_theme }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -271,7 +271,7 @@
 </head>
 <body>
     <div class="login-container">
-        <button class="theme-toggle" onclick="toggleTheme()" aria-label="Theme wechseln">
+        <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
             <svg xmlns="http://www.w3.org/2000/svg" class="theme-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path class="moon" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
                 <circle class="sun" cx="12" cy="12" r="5" style="display:none"/>
@@ -291,17 +291,17 @@
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
             </svg>
             <h1>{{ app_name }}</h1>
-            <h2 id="login-subtitle">Anmelden</h2>
+            <h2 id="login-subtitle">Sign in</h2>
         </div>
 
         <div id="pin-section" style="display: none;">
             <form id="pin-form">
-                <!-- PIN-Eingabefelder werden dynamisch erzeugt -->
+                <!-- PIN input fields are created dynamically -->
             </form>
         </div>
 
         <div id="passkey-section" style="display: none;">
-            <div class="divider">oder</div>
+            <div class="divider">or</div>
             <div class="passkey-wrap">
                 <button id="passkey-btn" class="passkey-btn" type="button">
                     <svg id="passkey-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -310,7 +310,7 @@
                         <circle cx="12" cy="16" r="1.5" fill="currentColor" stroke="none"></circle>
                     </svg>
                     <span class="passkey-spinner" id="passkey-spinner" style="display:none"></span>
-                    <span id="passkey-label">Mit Passkey anmelden</span>
+                    <span id="passkey-label">Sign in with passkey</span>
                 </button>
                 <p id="passkey-note" class="passkey-note" style="display:none"></p>
             </div>
@@ -320,7 +320,7 @@
     </div>
 
     <script>
-        // --- Theme (localStorage + Server-Default) ---
+        // --- Theme (localStorage + server default) ---
         const savedTheme = localStorage.getItem('theme') || '{{ default_theme }}';
         document.documentElement.setAttribute('data-theme', savedTheme);
         applyThemeIcon(savedTheme);
@@ -338,7 +338,7 @@
             document.querySelectorAll('.sun').forEach(p => p.style.display = theme === 'dark' ? '' : 'none');
         }
 
-        // Passkeys erfordern einen sicheren Kontext (HTTPS oder localhost)
+        // Passkeys require a secure context (HTTPS or localhost)
         const canUseWebAuthn = window.isSecureContext === true &&
             typeof navigator.credentials === 'object' &&
             typeof navigator.credentials.get === 'function' &&
@@ -350,7 +350,7 @@
             el.className = 'error-message' + (isSuccess ? ' success' : '');
         };
 
-        // PIN-Eingabefelder erzeugen
+        // Create the PIN input fields
         const createPinInputs = (length) => {
             const form = document.getElementById('pin-form');
             form.innerHTML = '';
@@ -414,14 +414,14 @@
                         input.classList.remove('filled');
                         input.classList.add('success');
                     });
-                    setError('Anmeldung erfolgreich', true);
+                    setError('Sign-in successful', true);
                     setTimeout(() => { window.location.href = '/'; }, 350);
                 } else {
-                    let errorText = 'Authentifizierung fehlgeschlagen';
+                    let errorText = 'Authentication failed';
                     try { errorText = (await response.json()).detail || errorText; } catch (_) {}
                     setError(errorText);
 
-                    const isLockedOut = errorText.includes('Zu viele Fehlversuche');
+                    const isLockedOut = errorText.includes('Too many failed attempts');
                     if (isLockedOut) {
                         inputs.forEach(input => {
                             input.disabled = true;
@@ -442,7 +442,7 @@
                     }
                 }
             } catch (err) {
-                setError('Fehler bei der Authentifizierung');
+                setError('Error during authentication');
                 inputs.forEach(input => { input.disabled = false; });
             }
         };
@@ -490,7 +490,7 @@
             inputs[0].focus();
         };
 
-        // Passkey-Login
+        // Passkey login
         const loginWithPasskey = async () => {
             const errorEl = document.getElementById('pin-error');
             const btn = document.getElementById('passkey-btn');
@@ -502,24 +502,24 @@
             errorEl.textContent = '';
             spinner.style.display = 'inline-block';
             icon.style.display = 'none';
-            label.textContent = 'Prüfe...';
+            label.textContent = 'Checking...';
 
             try {
-                // 1. Authentifizierungs-Optionen laden
+                // 1. Load authentication options
                 const optionsResponse = await authFetch('/api/passkey/auth-options', { method: 'POST' });
                 if (!optionsResponse.ok) {
-                    let msg = 'Passkey-Optionen konnten nicht geladen werden';
+                    let msg = 'Could not load passkey options';
                     try { msg = (await optionsResponse.json()).detail || msg; } catch (_) {}
                     throw new Error(msg);
                 }
                 const options = await optionsResponse.json();
 
-                // 2. Credential vom Authenticator anfordern
+                // 2. Request a credential from the authenticator
                 const credential = await navigator.credentials.get({
                     publicKey: toAuthOptions(options)
                 });
 
-                // 3. Auf dem Server verifizieren
+                // 3. Verify it on the server
                 const verifyResponse = await authFetch('/api/passkey/auth-verify', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -535,41 +535,41 @@
                     icon.innerHTML = '<polyline points="20 6 9 17 4 12"></polyline>';
                     icon.classList.add('success-icon');
                     btn.classList.add('success');
-                    label.textContent = 'Erfolgreich!';
+                    label.textContent = 'Success!';
                     setTimeout(() => { window.location.href = '/'; }, 900);
                 } else {
-                    let msg = 'Passkey-Authentifizierung fehlgeschlagen';
+                    let msg = 'Passkey authentication failed';
                     try { msg = (await verifyResponse.json()).detail || msg; } catch (_) {}
                     errorEl.textContent = msg;
                 }
             } catch (err) {
                 if (err.name === 'NotAllowedError') {
-                    errorEl.textContent = 'Passkey-Anmeldung abgebrochen';
+                    errorEl.textContent = 'Passkey sign-in cancelled';
                 } else if (err.name === 'SecurityError') {
-                    errorEl.textContent = 'Passkey-Fehler: Browser erlauben Passkeys nur über HTTPS oder localhost.';
+                    errorEl.textContent = 'Passkey error: browsers only allow passkeys over HTTPS or localhost.';
                 } else {
-                    errorEl.textContent = 'Passkey-Anmeldung fehlgeschlagen: ' + (err.message || err);
+                    errorEl.textContent = 'Passkey sign-in failed: ' + (err.message || err);
                 }
             } finally {
                 btn.disabled = false;
                 if (!succeeded) {
                     spinner.style.display = 'none';
                     icon.style.display = '';
-                    label.textContent = 'Mit Passkey anmelden';
+                    label.textContent = 'Sign in with passkey';
                 }
             }
         };
 
-        // Auth-Status prüfen und Login initialisieren
+        // Check auth status and initialize login
         authFetch('/api/auth/status')
             .then(response => {
                 if (response.status === 429) {
-                    throw new Error('Zu viele Anfragen. Bitte kurz warten.');
+                    throw new Error('Too many requests. Please wait a moment.');
                 }
                 return response.json();
             })
             .then(data => {
-                // Bereits angemeldet oder keine Auth erforderlich -> Dashboard
+                // Already authenticated or no auth required -> dashboard
                 if (data.authenticated || !data.required) {
                     window.location.href = '/';
                     return;
@@ -581,7 +581,7 @@
 
                 if (showPin) {
                     document.getElementById('pin-section').style.display = 'block';
-                    document.getElementById('login-subtitle').textContent = 'PIN eingeben';
+                    document.getElementById('login-subtitle').textContent = 'Enter PIN';
                     createPinInputs(data.pin_length || 4);
                     setupPinHandling();
                 }
@@ -595,28 +595,28 @@
                     if (!data.has_passkeys) {
                         btn.style.display = 'none';
                         note.style.display = 'block';
-                        note.textContent = 'Noch keine Passkeys registriert. Zuerst einen anlegen oder per PIN anmelden.';
+                        note.textContent = 'No passkeys registered yet. Add one first or sign in with PIN.';
                     } else if (!canUseWebAuthn) {
                         btn.disabled = true;
                         note.style.display = 'block';
                         note.className = 'passkey-note warning';
-                        note.textContent = 'Passkeys erfordern HTTPS oder localhost. Diese Verbindung ist nicht sicher, daher ist Passkey-Login hier nicht verfügbar.';
+                        note.textContent = 'Passkeys require HTTPS or localhost. This connection is not secure, so passkey login is unavailable here.';
                     } else {
                         btn.addEventListener('click', loginWithPasskey);
                     }
 
                     if (!showPin) {
                         document.querySelector('.divider').style.display = 'none';
-                        document.getElementById('login-subtitle').textContent = 'Mit Passkey anmelden';
+                        document.getElementById('login-subtitle').textContent = 'Sign in with passkey';
                     }
                 }
 
                 if (!showPin && !showPasskey) {
-                    document.getElementById('pin-error').textContent = 'Keine Authentifizierungsmethode verfügbar.';
+                    document.getElementById('pin-error').textContent = 'No authentication method available.';
                 }
             })
             .catch(err => {
-                document.getElementById('pin-error').textContent = err.message || 'Fehler beim Prüfen des Authentifizierungsstatus';
+                document.getElementById('pin-error').textContent = err.message || 'Error while checking the authentication status';
             });
     </script>
 </body>

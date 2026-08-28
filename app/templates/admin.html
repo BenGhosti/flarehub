@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de" data-theme="{{ default_theme }}">
+<html lang="en" data-theme="{{ default_theme }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -9,13 +9,13 @@
     <script src="/static/webauthn.js"></script>
     {% if auth_required %}
     <script>
-        // Kein Token im sessionStorage => neuer Browser-Besuch => Login erzwingen
+        // No token in sessionStorage => new browser visit => force login
         if (!getAuthToken()) window.location.replace('/login');
     </script>
     {% endif %}
 </head>
 <body>
-    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Theme wechseln">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle theme">
         <svg xmlns="http://www.w3.org/2000/svg" class="theme-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path class="moon" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
             <circle class="sun" cx="12" cy="12" r="5" style="display:none"/>
@@ -34,127 +34,127 @@
         <div class="top-bar">
             <div>
                 <h1 style="font-size: 1.6rem; text-align:left;">Admin</h1>
-                <a href="/" style="font-size: 0.85rem; color: var(--highlight-color); text-decoration:none;">← Zurück zum Dashboard</a>
+                <a href="/" style="font-size: 0.85rem; color: var(--highlight-color); text-decoration:none;">← Back to dashboard</a>
             </div>
             <div class="top-actions">
-                <button id="btn-lock-admin" type="button" class="btn-ghost" style="display:none;">🔒 Admin sperren</button>
+                <button id="btn-lock-admin" type="button" class="btn-ghost" style="display:none;">🔒 Lock admin</button>
                 <a href="/settings" style="text-decoration:none;">
-                    <button type="button" class="btn-ghost">Einstellungen</button>
+                    <button type="button" class="btn-ghost">Settings</button>
                 </a>
-                <button id="logout-btn" type="button" class="btn-ghost">Abmelden</button>
+                <button id="logout-btn" type="button" class="btn-ghost">Log out</button>
             </div>
         </div>
 
         {% if not admin_token_configured %}
         <div class="card banner banner-danger">
-            <strong>⚠️ Kein Admin-Token konfiguriert</strong>
-            <p>Bitte <code>ADMIN_TOKEN</code> in der .env setzen, um die Admin-Funktionen freizuschalten.</p>
+            <strong>⚠️ No admin token configured</strong>
+            <p>Please set <code>ADMIN_TOKEN</code> in the .env to unlock the admin features.</p>
         </div>
         {% endif %}
 
-        <!-- Admin-Token-Gate -->
+        <!-- Admin token gate -->
         <div class="card" id="admin-gate-card" style="text-align:left;">
-            <h3 style="margin-bottom: 0.75rem;">Admin-Bereich entsperren</h3>
+            <h3 style="margin-bottom: 0.75rem;">Unlock admin area</h3>
             <p style="font-size: 0.85rem; opacity: 0.75; margin-bottom: 1rem;">
-                Für Admin-Funktionen ist das <code>ADMIN_TOKEN</code> aus der .env erforderlich.
-                Das Grant gilt nur für die aktuelle Browser-Session (verfällt beim Schließen
-                des Tabs) und ist maximal 10 Minuten gültig.
+                The <code>ADMIN_TOKEN</code> from the .env is required for admin features.
+                The grant only applies to the current browser session (expires when the
+                tab is closed) and is valid for max. 10 minutes.
             </p>
             <form id="admin-token-form" style="display:flex; gap: 0.5rem; flex-wrap: wrap;">
-                <input type="password" id="admin-token-input" placeholder="Admin-Token" autocomplete="off"
+                <input type="password" id="admin-token-input" placeholder="Admin token" autocomplete="off"
                        style="flex:1; min-width: 200px; padding: 10px 12px; border-radius: 6px; border: 2px solid var(--border-color); background: var(--textarea-bg); color: var(--text-color); font-size: 0.9rem;">
-                <button type="submit">Entsperren</button>
+                <button type="submit">Unlock</button>
             </form>
             <p id="admin-token-error" class="error-message" style="text-align:left;"></p>
         </div>
 
-        <!-- Admin-Inhalte (nur sichtbar nach Entsperren) -->
+        <!-- Admin content (only visible after unlocking) -->
         <div id="admin-content" style="display:none;">
 
-            <!-- Privacy / Masking -->
+            <!-- Privacy / masking -->
             <div class="card" style="text-align:left;">
                 <h3 style="margin-bottom: 0.75rem;">Privacy / Masking</h3>
                 <p style="font-size: 0.85rem; opacity: 0.75; margin-bottom: 1rem;">
-                    IPs im Security-Feed werden standardmäßig maskiert
-                    (z.B. <code>185.220.xxx.xxx</code>). Hier kannst du die Maskierung
-                    temporär deaktivieren – gilt nur für die aktive Browser-Session
-                    und nur mit gültigem Admin-Grant.
+                    IPs in the security feed are masked by default
+                    (e.g. <code>185.220.xxx.xxx</code>). Here you can temporarily disable
+                    the masking – only applies to the active browser session
+                    and only with a valid admin grant.
                 </p>
                 <label style="display:flex; align-items:center; gap:0.75rem; cursor:pointer; font-size: 0.9rem;">
                     <input type="checkbox" id="toggle-reveal-ips" style="width:18px; height:18px;">
-                    Echte IP-Adressen im Security-Feed anzeigen
+                    Show real IP addresses in the security feed
                 </label>
                 <p id="masking-feedback" class="feedback-text"></p>
             </div>
 
-            <!-- Passkey-Verwaltung -->
+            <!-- Passkey management -->
             <div class="card" style="text-align:left;">
                 <div id="secure-warning" class="secure-warning">
-                    <strong>Passkeys sind in diesem Browser-Kontext nicht verfügbar.</strong><br>
-                    Passkeys/WebAuthn funktionieren nur über <strong>HTTPS</strong> (z.B. hinter einem Reverse-Proxy)
-                    oder auf <strong>localhost</strong>. Diese Verbindung ist nicht sicher, daher kannst du hier keine
-                    Passkeys hinzufügen oder nutzen. Der PIN-Login ist davon nicht betroffen.
+                    <strong>Passkeys are not available in this browser context.</strong><br>
+                    Passkeys/WebAuthn only work over <strong>HTTPS</strong> (e.g. behind a reverse proxy)
+                    or on <strong>localhost</strong>. This connection is not secure, so you cannot
+                    add or use passkeys here. PIN login is not affected.
                 </div>
 
                 <div class="add-section">
-                    <h2>Neuen Passkey hinzufügen</h2>
+                    <h2>Add a new passkey</h2>
                     <div class="add-form">
-                        <input type="text" id="passkey-nickname" placeholder="Name (z.B. YubiKey Büro)" maxlength="50">
-                        <button id="add-passkey-btn" type="button">Passkey hinzufügen</button>
+                        <input type="text" id="passkey-nickname" placeholder="Name (e.g. YubiKey office)" maxlength="50">
+                        <button id="add-passkey-btn" type="button">Add passkey</button>
                     </div>
                     <div id="status-message" class="status-message"></div>
                 </div>
 
                 <div class="passkey-list">
-                    <h2>Registrierte Passkeys</h2>
+                    <h2>Registered passkeys</h2>
                     <div id="passkey-list-container">
-                        <div class="empty-message">Lade Passkeys...</div>
+                        <div class="empty-message">Loading passkeys...</div>
                     </div>
                 </div>
             </div>
 
-            <!-- Datenbank-Wartung -->
+            <!-- Database maintenance -->
             <div class="card" style="text-align:left;">
-                <h3 style="margin-bottom: 0.75rem;">Datenbank-Wartung</h3>
+                <h3 style="margin-bottom: 0.75rem;">Database maintenance</h3>
                 <p style="font-size: 0.85rem; opacity: 0.75; margin-bottom: 1rem;">
-                    Führt <code>VACUUM</code> (kompaktiert die SQLite-Datei) und
-                    <code>ANALYZE</code> (aktualisiert Query-Statistiken) aus.
+                    Runs <code>VACUUM</code> (compacts the SQLite file) and
+                    <code>ANALYZE</code> (updates query statistics).
                 </p>
-                <button id="btn-db-maintenance" type="button" class="btn-small">Wartung ausführen</button>
+                <button id="btn-db-maintenance" type="button" class="btn-small">Run maintenance</button>
                 <p id="maintenance-feedback" class="feedback-text"></p>
             </div>
 
-            <!-- Log-Viewer -->
+            <!-- Log viewer -->
             <div class="card" style="text-align:left;">
                 <h3 style="margin-bottom: 0.75rem; display:flex; align-items:center; justify-content:space-between; gap:0.75rem; flex-wrap:wrap;">
-                    Collector-Logs (letzte 50)
-                    <button id="btn-refresh-logs" type="button" class="btn-small">Aktualisieren</button>
+                    Collector logs (last 50)
+                    <button id="btn-refresh-logs" type="button" class="btn-small">Refresh</button>
                 </h3>
                 <p style="font-size: 0.8rem; opacity: 0.6; margin-bottom: 0.75rem;">
-                    Read-only – Secrets/Tokens werden automatisch als *** maskiert.
+                    Read-only – secrets/tokens are automatically masked as ***.
                 </p>
                 <div style="overflow-x:auto;">
                     <table class="log-table">
                         <thead>
-                            <tr><th>Zeit</th><th>Status</th><th>Meldung</th><th>Dauer</th><th>Records</th></tr>
+                            <tr><th>Time</th><th>Status</th><th>Message</th><th>Duration</th><th>Records</th></tr>
                         </thead>
                         <tbody id="log-viewer-body">
-                            <tr><td colspan="5" class="feed-empty">Lade Logs...</td></tr>
+                            <tr><td colspan="5" class="feed-empty">Loading logs...</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            <!-- Webhook-Status (read-only) -->
+            <!-- Webhook status (read-only) -->
             <div class="card" style="text-align:left;">
-                <h3 style="margin-bottom: 0.75rem;">Webhook-Alerting</h3>
+                <h3 style="margin-bottom: 0.75rem;">Webhook alerting</h3>
                 <p style="font-size: 0.85rem; opacity: 0.75;">
                     Status: <strong id="webhook-status">–</strong>
                 </p>
                 <p style="font-size: 0.78rem; opacity: 0.6; margin-top: 4px;">
-                    Konfiguration über <code>WEBHOOK_ENABLED</code> / <code>WEBHOOK_URL</code> /
-                    <code>WEBHOOK_TYPE</code> (discord/telegram/gotify) in der .env.
-                    Benachrichtigungen bei Threat-Spikes und 5xx-Fehlern (passiv, read-only).
+                    Configured via <code>WEBHOOK_ENABLED</code> / <code>WEBHOOK_URL</code> /
+                    <code>WEBHOOK_TYPE</code> (discord/telegram/gotify) in the .env.
+                    Notifications on threat spikes and 5xx errors (passive, read-only).
                 </p>
             </div>
         </div>
@@ -241,7 +241,7 @@
     </style>
 
     <script>
-        // --- Theme (localStorage + Server-Default) ---
+        // --- Theme (localStorage + server default) ---
         const savedTheme = localStorage.getItem('theme') || '{{ default_theme }}';
         document.documentElement.setAttribute('data-theme', savedTheme);
         applyThemeIcon(savedTheme);
@@ -325,7 +325,7 @@
                 });
                 if (!res.ok) {
                     const err = await res.json();
-                    throw new Error(err.detail || 'Ungültiges Token');
+                    throw new Error(err.detail || 'Invalid token');
                 }
                 const data = await res.json();
                 setAdminGrant(data.grant);
@@ -337,31 +337,31 @@
 
         document.getElementById('btn-lock-admin').addEventListener('click', () => {
             lockAdmin();
-            adminError.textContent = 'Admin-Bereich gesperrt.';
+            adminError.textContent = 'Admin area locked.';
         });
 
-        // --- Privacy / Masking ---
+        // --- Privacy / masking ---
         const revealToggle = document.getElementById('toggle-reveal-ips');
         revealToggle.addEventListener('change', () => {
             setRevealIps(revealToggle.checked);
             const msg = revealToggle.checked
-                ? 'Maskierung deaktiviert – echte IPs werden angezeigt (nur diese Session).'
-                : 'Maskierung aktiviert – IPs werden wieder maskiert.';
+                ? 'Masking disabled – real IPs are shown (this session only).'
+                : 'Masking enabled – IPs are masked again.';
             showFeedback('masking-feedback', msg);
         });
 
-        // --- Passkey-Verwaltung ---
+        // --- Passkey management ---
         async function loadPasskeys() {
             const container = document.getElementById('passkey-list-container');
             try {
                 const res = await authFetch('/api/passkey/list');
                 if (!res.ok) {
-                    container.innerHTML = '<div class="empty-message">Konnte Passkeys nicht laden.</div>';
+                    container.innerHTML = '<div class="empty-message">Could not load passkeys.</div>';
                     return;
                 }
                 const keys = await res.json();
                 if (keys.length === 0) {
-                    container.innerHTML = '<div class="empty-message">Noch keine Passkeys registriert.</div>';
+                    container.innerHTML = '<div class="empty-message">No passkeys registered yet.</div>';
                     return;
                 }
                 container.innerHTML = '';
@@ -372,41 +372,41 @@
                     info.className = 'passkey-info';
                     const name = document.createElement('div');
                     name.className = 'passkey-name';
-                    name.textContent = key.nickname || 'Unbenannter Schlüssel';
+                    name.textContent = key.nickname || 'Unnamed key';
                     const meta = document.createElement('div');
                     meta.className = 'passkey-meta';
-                    const created = key.created_at ? new Date(key.created_at).toLocaleString('de-DE') : 'unbekannt';
-                    const lastUsed = key.last_used_at ? new Date(key.last_used_at).toLocaleString('de-DE') : 'noch nie';
-                    meta.textContent = `Erstellt: ${created} · Zuletzt genutzt: ${lastUsed}`;
+                    const created = key.created_at ? new Date(key.created_at).toLocaleString('en-GB') : 'unknown';
+                    const lastUsed = key.last_used_at ? new Date(key.last_used_at).toLocaleString('en-GB') : 'never';
+                    meta.textContent = `Created: ${created} · Last used: ${lastUsed}`;
                     info.appendChild(name);
                     info.appendChild(meta);
                     const removeBtn = document.createElement('button');
                     removeBtn.className = 'remove-btn';
-                    removeBtn.textContent = 'Löschen';
-                    removeBtn.addEventListener('click', () => removePasskey(key.id, key.nickname || 'Unbenannter Schlüssel'));
+                    removeBtn.textContent = 'Delete';
+                    removeBtn.addEventListener('click', () => removePasskey(key.id, key.nickname || 'Unnamed key'));
                     item.appendChild(info);
                     item.appendChild(removeBtn);
                     container.appendChild(item);
                 });
             } catch (err) {
                 console.error('Failed to load passkeys:', err);
-                container.innerHTML = '<div class="empty-message">Konnte Passkeys nicht laden.</div>';
+                container.innerHTML = '<div class="empty-message">Could not load passkeys.</div>';
             }
         }
 
         async function removePasskey(credentialRowId, name) {
-            if (!confirm(`Passkey "${name}" wirklich löschen?`)) return;
+            if (!confirm(`Really delete passkey "${name}"?`)) return;
             try {
                 const res = await authFetch(`/api/passkey/${credentialRowId}`, { method: 'DELETE' });
                 if (res.ok) {
-                    statusMessage(`Passkey "${name}" gelöscht`, 'success');
+                    statusMessage(`Passkey "${name}" deleted`, 'success');
                     loadPasskeys();
                 } else {
                     const data = await res.json();
-                    statusMessage(data.detail || 'Löschen fehlgeschlagen', 'error');
+                    statusMessage(data.detail || 'Deletion failed', 'error');
                 }
             } catch (err) {
-                statusMessage('Löschen fehlgeschlagen', 'error');
+                statusMessage('Deletion failed', 'error');
             }
         }
 
@@ -421,16 +421,16 @@
             const btn = document.getElementById('add-passkey-btn');
             if (loading) {
                 btn.disabled = true;
-                btn.innerHTML = '<span class="btn-spinner"></span> Warte auf Schlüssel...';
+                btn.innerHTML = '<span class="btn-spinner"></span> Waiting for key...';
             } else {
                 btn.disabled = false;
-                btn.textContent = 'Passkey hinzufügen';
+                btn.textContent = 'Add passkey';
             }
         };
 
         const addPasskey = async () => {
             if (!canUseWebAuthn) {
-                statusMessage('Passkeys sind in diesem Browser-Kontext nicht verfügbar. HTTPS oder localhost verwenden.', 'error');
+                statusMessage('Passkeys are not available in this browser context. Use HTTPS or localhost.', 'error');
                 return;
             }
             const nameInput = document.getElementById('passkey-nickname');
@@ -440,7 +440,7 @@
                 const optionsResponse = await authFetch('/api/passkey/register-options', { method: 'POST' });
                 if (!optionsResponse.ok) {
                     const data = await optionsResponse.json();
-                    throw new Error(data.detail || 'Registrierungs-Optionen konnten nicht geladen werden');
+                    throw new Error(data.detail || 'Could not load registration options');
                 }
                 const options = await optionsResponse.json();
                 const credential = await navigator.credentials.create({ publicKey: toRegistrationOptions(options) });
@@ -450,17 +450,17 @@
                     body: JSON.stringify({ credential: registrationToJSON(credential), nickname: name })
                 });
                 if (verifyResponse.ok) {
-                    statusMessage(`Passkey "${name}" erfolgreich hinzugefügt`, 'success');
+                    statusMessage(`Passkey "${name}" added successfully`, 'success');
                     nameInput.value = '';
                     loadPasskeys();
                 } else {
                     const data = await verifyResponse.json();
-                    statusMessage(data.detail || 'Registrierung fehlgeschlagen', 'error');
+                    statusMessage(data.detail || 'Registration failed', 'error');
                 }
             } catch (err) {
-                if (err.name === 'NotAllowedError') statusMessage('Registrierung abgebrochen', 'error');
-                else if (err.name === 'SecurityError') statusMessage('Passkey-Fehler: Browser erlauben Passkeys nur über HTTPS oder localhost.', 'error');
-                else statusMessage('Registrierung fehlgeschlagen: ' + (err.message || err), 'error');
+                if (err.name === 'NotAllowedError') statusMessage('Registration cancelled', 'error');
+                else if (err.name === 'SecurityError') statusMessage('Passkey error: browsers only allow passkeys over HTTPS or localhost.', 'error');
+                else statusMessage('Registration failed: ' + (err.message || err), 'error');
             } finally {
                 setAddButtonLoading(false);
             }
@@ -471,56 +471,56 @@
             if (e.key === 'Enter') addPasskey();
         });
 
-        // --- Datenbank-Wartung ---
+        // --- Database maintenance ---
         document.getElementById('btn-db-maintenance').addEventListener('click', async (e) => {
             e.target.disabled = true;
-            e.target.textContent = 'Läuft...';
+            e.target.textContent = 'Running...';
             try {
                 const res = await authFetch('/api/admin/db-maintenance', { method: 'POST' });
                 if (!res.ok) throw new Error((await res.json()).detail);
                 const data = await res.json();
                 showFeedback('maintenance-feedback',
-                    `VACUUM: ${data.vacuum} · ANALYZE: ${data.analyze} · Dauer: ${data.duration_ms} ms`,
+                    `VACUUM: ${data.vacuum} · ANALYZE: ${data.analyze} · Duration: ${data.duration_ms} ms`,
                     data.vacuum !== 'OK' || data.analyze !== 'OK');
             } catch (err) {
-                showFeedback('maintenance-feedback', 'Fehler: ' + err.message, true);
+                showFeedback('maintenance-feedback', 'Error: ' + err.message, true);
             } finally {
                 e.target.disabled = false;
-                e.target.textContent = 'Wartung ausführen';
+                e.target.textContent = 'Run maintenance';
             }
         });
 
-        // --- Log-Viewer (Server-seitig gescrubbt) ---
+        // --- Log viewer (scrubbed server-side) ---
         async function loadLogs() {
             const body = document.getElementById('log-viewer-body');
             try {
                 const res = await authFetch('/api/admin/logs?limit=50');
                 if (!res.ok) {
-                    body.innerHTML = '<tr><td colspan="5" class="feed-empty">Konnte Logs nicht laden.</td></tr>';
+                    body.innerHTML = '<tr><td colspan="5" class="feed-empty">Could not load logs.</td></tr>';
                     return;
                 }
                 const logs = await res.json();
                 if (!logs.length) {
-                    body.innerHTML = '<tr><td colspan="5" class="feed-empty">Noch keine Collector-Läufe.</td></tr>';
+                    body.innerHTML = '<tr><td colspan="5" class="feed-empty">No collector runs yet.</td></tr>';
                     return;
                 }
                 body.innerHTML = logs.map(l => `
                     <tr>
-                        <td>${l.timestamp ? new Date(l.timestamp).toLocaleString('de-DE') : '–'}</td>
-                        <td><span class="log-status ${l.success ? 'ok' : 'err'}">${l.success ? 'OK' : 'FEHLER'}</span></td>
+                        <td>${l.timestamp ? new Date(l.timestamp).toLocaleString('en-GB') : '–'}</td>
+                        <td><span class="log-status ${l.success ? 'ok' : 'err'}">${l.success ? 'OK' : 'ERROR'}</span></td>
                         <td class="log-message">${esc(l.message || '–')}</td>
                         <td>${l.duration_ms ?? '–'} ms</td>
                         <td>${l.records_fetched ?? '–'}</td>
                     </tr>
                 `).join('');
             } catch (err) {
-                body.innerHTML = '<tr><td colspan="5" class="feed-empty">Konnte Logs nicht laden.</td></tr>';
+                body.innerHTML = '<tr><td colspan="5" class="feed-empty">Could not load logs.</td></tr>';
             }
         }
 
         document.getElementById('btn-refresh-logs').addEventListener('click', loadLogs);
 
-        // --- Admin-Status / Webhook / Masking ---
+        // --- Admin status / webhook / masking ---
         async function loadAdminStatus() {
             const res = await authFetch('/api/admin/status');
             if (!res.ok) return;
@@ -528,15 +528,15 @@
             revealToggle.checked = getRevealIps();
             const wh = document.getElementById('webhook-status');
             if (data.webhook_enabled) {
-                wh.textContent = `aktiv (${esc(data.webhook_type || 'unbekannt')})`;
+                wh.textContent = `active (${esc(data.webhook_type || 'unknown')})`;
                 wh.style.color = 'var(--highlight-color)';
             } else {
-                wh.textContent = 'deaktiviert (WEBHOOK_ENABLED=false)';
+                wh.textContent = 'disabled (WEBHOOK_ENABLED=false)';
                 wh.style.color = 'var(--danger-color)';
             }
         }
 
-        // --- Init: Auto-Unlock falls Grant noch gültig ist ---
+        // --- Init: auto-unlock if the grant is still valid ---
         async function checkAdminStatus() {
             const res = await authFetch('/api/admin/status');
             if (!res.ok) return;

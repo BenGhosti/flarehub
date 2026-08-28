@@ -1,12 +1,10 @@
-version: "3.8"
-
 services:
   flarehub:
     build: .
     container_name: flarehub
     restart: unless-stopped
-    # Container läuft als UID 1001 (non-root). Das gemountete Host-Verzeichnis
-    # muss von UID 1001 beschreibbar sein, einmalig ausführen:
+    # Container runs as UID 1001 (non-root). The mounted host directory
+    # must be writable by UID 1001, run once:
     #   chown -R 1001:1001 ./data
     ports:
       - "8000:8000"
@@ -16,3 +14,6 @@ services:
       - .env
     environment:
       - TZ=${TZ:-Europe/Berlin}
+    # Note: Docker Compose interpolates env_file values. If a value in .env
+    # contains "$" (e.g. a bcrypt hash), escape it as "$$". Plaintext values
+    # (like AUTH_PIN) are unaffected.

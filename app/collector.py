@@ -1,19 +1,18 @@
 """
 FlareHub – Cloudflare Analytics Collector & Zone Actions.
 
-Zieht periodisch GraphQL-Metriken über httpRequests1mGroups von der Cloudflare
-Analytics API (https://api.cloudflare.com/client/v4/graphql) und stellt
-Quick-Action-Funktionen für Zone-Settings bereit (Dev Mode, Purge Cache,
-Under Attack Mode).
+Periodically pulls GraphQL metrics via httpRequests1mGroups from the Cloudflare
+Analytics API (https://api.cloudflare.com/client/v4/graphql) and provides
+quick-action functions for zone settings (dev mode, purge cache, under attack mode).
 
-Beachtete Cloudflare-Plattform-Limits (Stand: developers.cloudflare.com/analytics/graphql-api/limits):
-- GraphQL-Endpunkt: Cost-based Rate-Limiting, Standard-Quota 300 Queries / 5 Minuten.
-- REST-Endpunkte (Zone Settings, Purge Cache): 1200 Requests / 5 Minuten (global, pro User/Token).
-- Eine einzelne GraphQL-Antwort liefert max. 10.000 Records (maxPageSize) – wir fragen
-  standardmäßig deutlich konservativer ab (COLLECTOR_MAX_RECORDS_PER_QUERY).
-- Freie Pläne haben nur begrenzten Zugriff auf historische Firewall-Events (u.a. 14 Tage).
-  Ein 403/permission-Fehler von Cloudflare wird daher nicht als Bug behandelt, sondern
-  im CollectorRun-Log als Plan-Limitierung protokolliert.
+Respected Cloudflare platform limits (as of developers.cloudflare.com/analytics/graphql-api/limits):
+- GraphQL endpoint: cost-based rate limiting, default quota 300 queries / 5 minutes.
+- REST endpoints (zone settings, purge cache): 1200 requests / 5 minutes (global, per user/token).
+- A single GraphQL response delivers max. 10,000 records (maxPageSize) – we query
+  significantly more conservatively by default (COLLECTOR_MAX_RECORDS_PER_QUERY).
+- Free plans have limited access to historical firewall events (e.g. 14 days).
+  A 403/permission error from Cloudflare is therefore not treated as a bug, but
+  logged in the CollectorRun log as a plan limitation.
 """
 import asyncio
 import logging
@@ -78,9 +77,9 @@ query GetFirewallEvents($zoneTag: string, $since: Time, $until: Time, $limit: In
 }
 """
 
-# Passive Analytics (read-only): letzte 24h, aggregiert nach Herkunftsland und
-# HTTP-Status. Nutzt httpRequestsAdaptiveGroups - ein reiner Lese-Endpunkt,
-# es werden keinerlei schreibende Aktionen ausgelöst.
+# Passive analytics (read-only): last 24h, aggregated by origin country and
+# HTTP status. Uses httpRequestsAdaptiveGroups - a pure read endpoint,
+# no write actions are triggered.
 PASSIVE_ANALYTICS_QUERY = """
 query GetPassiveAnalytics($zoneTag: string, $since: Time, $until: Time, $limit: Int) {
   viewer {
@@ -103,10 +102,10 @@ query GetPassiveAnalytics($zoneTag: string, $since: Time, $until: Time, $limit: 
 
 
 def _headers() -> dict:
-    """Header bei jedem Call neu bauen, damit ein zur Laufzeit geänderter Token sofort greift.
-    Der Authorization-Header wird nur gesetzt, wenn ein Token vorhanden ist – ein leerer
-    Bearer-Wert (f\"Bearer \" + '') führt bei httpx/httpcore sonst zu einem
-    LocalProtocolError und zu einem unbehandelten 500."""
+    """Rebuild headers on every call so a token changed at runtime takes effect immediately.
+    The Authorization header is only set when a token exists – an empty Bearer value
+    (f"Bearer " + '') would otherwise cause a LocalProtocolError and an unhandled 500
+    in httpx/httpcore."""
     headers = {"Content-Type": "application/json"}
     if settings.CLOUDFLARE_API_TOKEN:
         headers["Authorization"] = f"Bearer {settings.CLOUDFLARE_API_TOKEN}"
@@ -114,9 +113,9 @@ def _headers() -> dict:
 
 
 def _zone_configured() -> tuple[bool, str]:
-    """Prüft, ob die Cloudflare-Zugangsdaten vollständig sind. Gibt (ok, error_message) zurück."""
+    """Checks whether the Cloudflare credentials are complete. Returns (ok, error_message)."""
     if not settings.CLOUDFLARE_API_TOKEN or not settings.CLOUDFLARE_ZONE_ID:
-        return False, "Cloudflare nicht konfiguriert (CLOUDFLARE_API_TOKEN / CLOUDFLARE_ZONE_ID fehlen in .env)"
+        return False, "Cloudflare not configured (set CLOUDFLARE_API_TOKEN / CLOUDFLARE_ZONE_ID in the .env)"
     return True, ""
 
 
@@ -126,7 +125,7 @@ def _log_run(db, success: bool, message: str, duration_ms: int, records: int = 0
 
 
 async def _graphql_request(query: str, variables: dict) -> tuple[dict | None, str | None]:
-    """Führt eine GraphQL-Anfrage aus. Gibt (data, error_message) zurück – genau eines ist None."""
+    """Executes a GraphQL request. Returns (data, error_message) – exactly one of them is None."""
     ok, cfg_error = _zone_configured()
     if not ok:
         return None, cfg_error
@@ -139,42 +138,42 @@ async def _graphql_request(query: str, variables: dict) -> tuple[dict | None, st
                 json={"query": query, "variables": variables},
             )
         except httpx.TimeoutException:
-            return None, "Zeitüberschreitung bei Cloudflare-Anfrage"
+            return None, "Timeout while contacting Cloudflare"
         except httpx.HTTPError as e:
-            return None, f"Netzwerkfehler: {e}"
+            return None, f"Network error: {e}"
 
     if resp.status_code == 429:
-        return None, "Cloudflare Rate-Limit erreicht (429) – nächster Versuch beim nächsten Intervall"
+        return None, "Cloudflare rate limit reached (429) – will retry on the next interval"
     if resp.status_code == 403:
-        return None, "Zugriff verweigert (403) – Token-Berechtigung oder Plan-Limit prüfen"
+        return None, "Access denied (403) – check token permissions or plan limits"
     if resp.status_code == 401:
-        return None, "Nicht autorisiert (401) – CLOUDFLARE_API_TOKEN prüfen"
+        return None, "Unauthorized (401) – check CLOUDFLARE_API_TOKEN"
     if resp.status_code >= 400:
-        return None, f"Cloudflare-API-Fehler: HTTP {resp.status_code}"
+        return None, f"Cloudflare API error: HTTP {resp.status_code}"
 
     try:
         payload = resp.json()
     except ValueError:
-        return None, "Ungültige JSON-Antwort von Cloudflare"
+        return None, "Invalid JSON response from Cloudflare"
 
     if payload.get("errors"):
         messages = "; ".join(err.get("message", str(err)) for err in payload["errors"])
-        return None, f"GraphQL-Fehler: {messages}"
+        return None, f"GraphQL error: {messages}"
 
     data = payload.get("data")
     if data is None:
-        return None, "Keine Daten in Cloudflare-Antwort"
+        return None, "No data in Cloudflare response"
 
     return data, None
 
 
 async def fetch_analytics_and_store():
-    """Wird periodisch (COLLECTOR_INTERVAL_MINUTES) vom Scheduler aufgerufen."""
+    """Called periodically (COLLECTOR_INTERVAL_MINUTES) by the scheduler."""
     start_ts = time.monotonic()
 
     ok, cfg_error = _zone_configured()
     if not ok:
-        logger.warning("Cloudflare-Zugangsdaten fehlen (CLOUDFLARE_API_TOKEN / CLOUDFLARE_ZONE_ID) – Collector übersprungen")
+        logger.warning("Cloudflare credentials missing (CLOUDFLARE_API_TOKEN / CLOUDFLARE_ZONE_ID) – collector skipped")
         db = SessionLocal()
         try:
             _log_run(db, False, cfg_error, 0)
@@ -183,7 +182,7 @@ async def fetch_analytics_and_store():
         return
 
     until = datetime.now(timezone.utc)
-    # +1 Minute Überlappung als Puffer gegen Verzögerungen bei der Datenverfügbarkeit
+    # +1 minute overlap as a buffer against delays in data availability
     since = until - timedelta(minutes=settings.COLLECTOR_INTERVAL_MINUTES + 1)
 
     variables = {
@@ -197,7 +196,7 @@ async def fetch_analytics_and_store():
     duration_ms = int((time.monotonic() - start_ts) * 1000)
 
     if error:
-        logger.error(f"Cloudflare Analytics-Abfrage fehlgeschlagen: {error}")
+        logger.error(f"Cloudflare analytics query failed: {error}")
         db = SessionLocal()
         try:
             _log_run(db, False, error, duration_ms)
@@ -210,7 +209,7 @@ async def fetch_analytics_and_store():
 
     records_stored = 0
     if not groups:
-        logger.info("Keine neuen Analytics-Daten im Abfragezeitraum")
+        logger.info("No new analytics data in the query window")
     else:
         totals = {
             "requests_total": 0,
@@ -250,16 +249,16 @@ async def fetch_analytics_and_store():
             db.add(snapshot)
             db.commit()
             records_stored = len(groups)
-            logger.info(f"Analytics-Snapshot gespeichert: {totals['requests_total']} Requests ({records_stored} Rohdatenpunkte)")
+            logger.info(f"Analytics snapshot stored: {totals['requests_total']} requests ({records_stored} raw data points)")
 
-            # Passives Alerting: Threat-Spike im letzten Intervall
+            # Passive alerting: threat spike in the last interval
             if (
                 settings.WEBHOOK_ENABLED
                 and settings.WEBHOOK_ON_THREAT_SPIKE
                 and totals["threats_total"] >= settings.WEBHOOK_THREAT_THRESHOLD
             ):
                 await send_webhook_notification(
-                    f"⚠️ Threat-Spike erkannt: {totals['threats_total']} geblockte Requests im letzten Intervall"
+                    f"⚠️ Threat spike detected: {totals['threats_total']} blocked requests in the last interval"
                 )
         finally:
             db.close()
@@ -269,7 +268,7 @@ async def fetch_analytics_and_store():
     if settings.FEATURE_SECURITY_FEED:
         firewall_records, firewall_error = await fetch_firewall_events()
 
-    # Passive Analytics (Länder & Statuscodes) - read-only, Fehler sind nicht kritisch
+    # Passive analytics (countries & status codes) - read-only, errors are not critical
     passive_records = 0
     passive_error = None
     if settings.FEATURE_COUNTRY_CHART or settings.FEATURE_STATUS_CHART:
@@ -280,9 +279,9 @@ async def fetch_analytics_and_store():
         cleanup_old_data(db)
         notes = []
         if firewall_error:
-            notes.append(f"Firewall-Events übersprungen: {firewall_error}")
+            notes.append(f"Firewall events skipped: {firewall_error}")
         if passive_error:
-            notes.append(f"Passive Analytics übersprungen: {passive_error}")
+            notes.append(f"Passive analytics skipped: {passive_error}")
         if notes:
             _log_run(db, True, "OK (" + "; ".join(notes) + ")", duration_ms, records_stored + firewall_records + passive_records)
         else:
@@ -292,7 +291,7 @@ async def fetch_analytics_and_store():
 
 
 async def fetch_firewall_events() -> tuple[int, str | None]:
-    """Holt Firewall/WAF-Events für den Security-Feed. Gibt (Anzahl gespeicherter Events, Fehler) zurück."""
+    """Fetches firewall/WAF events for the security feed. Returns (stored event count, error)."""
     until = datetime.now(timezone.utc)
     since = until - timedelta(minutes=settings.COLLECTOR_INTERVAL_MINUTES + 1)
 
@@ -305,7 +304,7 @@ async def fetch_firewall_events() -> tuple[int, str | None]:
 
     data, error = await _graphql_request(FIREWALL_EVENTS_QUERY, variables)
     if error:
-        logger.warning(f"Cloudflare Firewall-Events-Abfrage übersprungen: {error}")
+        logger.warning(f"Cloudflare firewall events query skipped: {error}")
         return 0, error
 
     zones = data.get("viewer", {}).get("zones", [])
@@ -336,7 +335,7 @@ async def fetch_firewall_events() -> tuple[int, str | None]:
             ))
             stored += 1
         db.commit()
-        logger.info(f"{stored} Firewall-Events gespeichert")
+        logger.info(f"{stored} firewall events stored")
     finally:
         db.close()
 
@@ -344,11 +343,11 @@ async def fetch_firewall_events() -> tuple[int, str | None]:
 
 
 async def send_webhook_notification(message: str):
-    """Sendet eine Benachrichtigung über den konfigurierten Webhook (passiv, optional).
+    """Sends a notification via the configured webhook (passive, optional).
 
     WEBHOOK_TYPE: discord (content), telegram (text+chat_id), gotify (message+X-Gotify-Key).
-    Fehler werden nur mit Fehlertyp geloggt - die Exception-Nachricht enthält die
-    Webhook-URL inkl. Token/Secret und darf niemals in Logs landen."""
+    Errors are logged with the error type only - the exception message contains the
+    webhook URL incl. token/secret and must never end up in logs."""
     if not settings.webhook_active:
         return
     webhook_type = settings.WEBHOOK_TYPE
@@ -365,7 +364,7 @@ async def send_webhook_notification(message: str):
             query = parse_qs(urlparse(url).query)
             chat_id = (query.get("chat_id") or [""])[0]
         if not chat_id:
-            logger.warning("Telegram-Webhook ohne chat_id - WEBHOOK_TELEGRAM_CHAT_ID setzen")
+            logger.warning("Telegram webhook without chat_id - set WEBHOOK_TELEGRAM_CHAT_ID")
             return
         payload = {"chat_id": chat_id, "text": message, "disable_web_page_preview": True}
     elif webhook_type == "gotify":
@@ -377,15 +376,15 @@ async def send_webhook_notification(message: str):
         try:
             await client.post(url, json=payload, headers=headers)
         except httpx.HTTPError as e:
-            logger.error("Webhook-Benachrichtigung fehlgeschlagen (%s)", type(e).__name__)
+            logger.error("Webhook notification failed (%s)", type(e).__name__)
 
 
 # ---------------------------------------------------------------------------
-# Privacy: IP-Maskierung & Log-Scrubbing
+# Privacy: IP masking & log scrubbing
 # ---------------------------------------------------------------------------
 def mask_ip(ip: str) -> str:
-    """Maskiert öffentliche IPs: 185.220.xxx.xxx bzw. 2a01:4f8:xxx::
-    Ungültige/leere Werte bleiben unverändert."""
+    """Masks public IPs: 185.220.xxx.xxx or 2a01:4f8:xxx::
+    Invalid/empty values remain unchanged."""
     if not ip:
         return ip
     ip = ip.strip()
@@ -400,7 +399,7 @@ def mask_ip(ip: str) -> str:
     return ip
 
 
-# Muster für Secrets/Tokens in Log-Meldungen - alles wird zu *** maskiert
+# Patterns for secrets/tokens in log messages - everything is masked as ***
 _SECRET_PATTERNS = [
     re.compile(r"(?i)(token|secret|key|passwd|password|authorization|bearer|x-gotify-key)(\s*[=:]\s*)([^\s\"'&]+)"),
     re.compile(r"(?i)(\?|&)(token|key|secret|code|auth)=([^&\s\"']+)"),
@@ -409,13 +408,13 @@ _SECRET_PATTERNS = [
 
 
 def scrub_log_message(message: str) -> str:
-    """Entfernt Secrets/Tokens aus Log-Meldungen (Pflicht vor Anzeige im Log-Viewer)."""
+    """Removes secrets/tokens from log messages (required before display in the log viewer)."""
     if not message:
         return message
     scrubbed = message
     for pattern in _SECRET_PATTERNS:
         if pattern.pattern.endswith(r"(https?://[^\s\"']+)"):
-            # URLs vollständig maskieren (können Token enthalten, z.B. Webhook-URLs)
+            # Mask URLs completely (they can contain tokens, e.g. webhook URLs)
             scrubbed = pattern.sub("***URL***", scrubbed)
         else:
             scrubbed = pattern.sub(lambda m: f"{m.group(1)}{m.group(2)}***", scrubbed)
@@ -423,13 +422,13 @@ def scrub_log_message(message: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Passive Analytics: Länder & Statuscodes (read-only)
+# Passive analytics: countries & status codes (read-only)
 # ---------------------------------------------------------------------------
 def _status_group(status) -> str:
     try:
         code = int(status)
     except (TypeError, ValueError):
-        return "andere"
+        return "other"
     if 200 <= code < 300:
         return "2xx"
     if 300 <= code < 400:
@@ -438,15 +437,15 @@ def _status_group(status) -> str:
         return "4xx"
     if 500 <= code < 600:
         return "5xx"
-    return "andere"
+    return "other"
 
 
 async def fetch_passive_analytics_and_store() -> tuple[int, str | None]:
-    """Holt die letzten 24h passiv aggregiert (Herkunftsland + HTTP-Status) und speichert
-    sie als Snapshot. Gibt (anzahl_gespeicherter_zeilen, fehler) zurück.
+    """Fetches the last 24h passively aggregated (origin country + HTTP status) and stores
+    them as a snapshot. Returns (stored_row_count, error).
 
-    Rein lesend - es werden keinerlei schreibende DNS-/WAF-Aktionen ausgelöst.
-    Sendet bei 5xx-Überschreitung eine Webhook-Benachrichtigung (optional)."""
+    Read-only - no write DNS/WAF actions are triggered.
+    Sends a webhook notification on 5xx threshold breach (optional)."""
     until = datetime.now(timezone.utc)
     since = until - timedelta(hours=24)
 
@@ -459,7 +458,7 @@ async def fetch_passive_analytics_and_store() -> tuple[int, str | None]:
 
     data, error = await _graphql_request(PASSIVE_ANALYTICS_QUERY, variables)
     if error:
-        logger.warning(f"Passive Analytics übersprungen: {error}")
+        logger.warning(f"Passive analytics skipped: {error}")
         return 0, error
 
     zones = data.get("viewer", {}).get("zones", [])
@@ -473,7 +472,7 @@ async def fetch_passive_analytics_and_store() -> tuple[int, str | None]:
     for g in groups:
         count = g.get("count", 0) or 0
         dims = g.get("dimensions", {}) or {}
-        country = (dims.get("clientCountryName") or "Unbekannt").strip() or "Unbekannt"
+        country = (dims.get("clientCountryName") or "Unknown").strip() or "Unknown"
         countries[country] = countries.get(country, 0) + count
         group = _status_group(dims.get("edgeResponseStatus"))
         status_groups[group] = status_groups.get(group, 0) + count
@@ -492,11 +491,11 @@ async def fetch_passive_analytics_and_store() -> tuple[int, str | None]:
         db.close()
 
     logger.info(
-        f"Passive Analytics gespeichert: {len(countries)} Länder, "
-        f"{len(status_groups)} Statusgruppen ({stored} Zeilen)"
+        f"Passive analytics stored: {len(countries)} countries, "
+        f"{len(status_groups)} status groups ({stored} rows)"
     )
 
-    # Passives Alerting: 5xx-Schwelle überschritten
+    # Passive alerting: 5xx threshold breached
     five_xx = status_groups.get("5xx", 0)
     if (
         settings.WEBHOOK_ENABLED
@@ -504,18 +503,18 @@ async def fetch_passive_analytics_and_store() -> tuple[int, str | None]:
         and five_xx >= settings.WEBHOOK_5XX_THRESHOLD
     ):
         await send_webhook_notification(
-            f"🔴 Erhöhte 5xx-Fehler: {five_xx} in den letzten 24h "
-            f"(Schwelle: {settings.WEBHOOK_5XX_THRESHOLD})"
+            f"🔴 Elevated 5xx errors: {five_xx} in the last 24h "
+            f"(threshold: {settings.WEBHOOK_5XX_THRESHOLD})"
         )
 
     return stored, None
 
 
 # ---------------------------------------------------------------------------
-# Zone Quick Actions (REST API v4)
+# Zone quick actions (REST API v4)
 # ---------------------------------------------------------------------------
 async def set_zone_setting(setting_name: str, value: str) -> tuple[bool, str]:
-    """Setzt ein Zone-Setting, z.B. development_mode oder security_level."""
+    """Sets a zone setting, e.g. development_mode or security_level."""
     ok, cfg_error = _zone_configured()
     if not ok:
         return False, cfg_error
@@ -525,19 +524,19 @@ async def set_zone_setting(setting_name: str, value: str) -> tuple[bool, str]:
         try:
             resp = await client.patch(url, headers=_headers(), json={"value": value})
         except httpx.TimeoutException:
-            return False, "Zeitüberschreitung bei Cloudflare-Anfrage"
+            return False, "Timeout while contacting Cloudflare"
         except httpx.HTTPError as e:
-            return False, f"Netzwerkfehler: {e}"
+            return False, f"Network error: {e}"
 
     if resp.status_code == 429:
-        return False, "Cloudflare Rate-Limit erreicht (429), bitte kurz warten"
+        return False, "Cloudflare rate limit reached (429), please wait a moment"
     if resp.status_code == 403:
-        return False, "Zugriff verweigert (403) – Token-Berechtigung 'Zone Settings: Edit' prüfen"
+        return False, "Access denied (403) – check the 'Zone Settings: Edit' token permission"
 
     try:
         data = resp.json()
     except ValueError:
-        return False, f"Ungültige Antwort (HTTP {resp.status_code})"
+        return False, f"Invalid response (HTTP {resp.status_code})"
 
     if not data.get("success"):
         errors = data.get("errors") or [{"message": f"HTTP {resp.status_code}"}]
@@ -558,14 +557,14 @@ async def get_zone_setting(setting_name: str) -> str | None:
             data = resp.json()
             return data.get("result", {}).get("value")
         except httpx.HTTPError as e:
-            logger.error(f"Konnte Zone-Setting {setting_name} nicht lesen: {e}")
+            logger.error(f"Could not read zone setting {setting_name}: {e}")
             return None
         except ValueError as e:
-            logger.error(f"Konnte Zone-Setting {setting_name} nicht lesen (Ungültige Antwort): {e}")
+            logger.error(f"Could not read zone setting {setting_name} (invalid response): {e}")
             return None
 
 
-# Unkritische, lesbare Zone-Settings für die Action-Center-Übersicht
+# Uncritical, readable zone settings for the action center overview
 ZONE_SETTINGS_SUMMARY_KEYS = [
     "development_mode",
     "security_level",
@@ -581,7 +580,7 @@ ZONE_SETTINGS_SUMMARY_KEYS = [
 
 
 async def get_zone_settings_summary() -> dict:
-    """Liest mehrere unkritische Zone-Settings parallel ein (read-only)."""
+    """Reads several uncritical zone settings in parallel (read-only)."""
     ok, cfg_error = _zone_configured()
     if not ok:
         return {"configured": False, "error": cfg_error, "settings": {}}
@@ -607,26 +606,26 @@ async def purge_cache(purge_everything: bool = True, files: list[str] = None) ->
         try:
             resp = await client.post(url, headers=_headers(), json=payload)
         except httpx.TimeoutException:
-            return False, "Zeitüberschreitung bei Cloudflare-Anfrage"
+            return False, "Timeout while contacting Cloudflare"
         except httpx.HTTPError as e:
-            return False, f"Netzwerkfehler: {e}"
+            return False, f"Network error: {e}"
 
     if resp.status_code == 429:
-        return False, "Cloudflare Rate-Limit erreicht (429), bitte kurz warten"
+        return False, "Cloudflare rate limit reached (429), please wait a moment"
     if resp.status_code == 403:
-        return False, "Zugriff verweigert (403) – Token-Berechtigung 'Cache Purge: Edit' prüfen"
+        return False, "Access denied (403) – check the 'Cache Purge: Edit' token permission"
 
     try:
         data = resp.json()
     except ValueError:
-        return False, f"Ungültige Antwort (HTTP {resp.status_code})"
+        return False, f"Invalid response (HTTP {resp.status_code})"
 
     if not data.get("success"):
         errors = data.get("errors") or [{"message": f"HTTP {resp.status_code}"}]
         return False, "; ".join(e.get("message", str(e)) for e in errors)
 
     if settings.NOTIFY_ON_CACHE_PURGE:
-        await send_webhook_notification("🧹 Cache wurde geleert (FlareHub Quick Action)")
+        await send_webhook_notification("🧹 Cache has been purged (FlareHub quick action)")
     return True, "OK"
 
 
@@ -638,6 +637,6 @@ async def toggle_under_attack_mode(enable: bool) -> tuple[bool, str]:
     value = "under_attack" if enable else "medium"
     ok, msg = await set_zone_setting("security_level", value)
     if ok and settings.NOTIFY_ON_UNDER_ATTACK_TOGGLE:
-        state = "aktiviert" if enable else "deaktiviert"
-        await send_webhook_notification(f"🛡️ Under Attack Mode {state} (FlareHub Quick Action)")
+        state = "enabled" if enable else "disabled"
+        await send_webhook_notification(f"🛡️ Under Attack Mode {state} (FlareHub quick action)")
     return ok, msg

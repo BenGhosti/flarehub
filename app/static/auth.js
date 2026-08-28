@@ -1,15 +1,14 @@
-// FlareHub - Stateless Auth-Helfer (kein Cookie!)
-// Login-Token & Admin-Grant leben NUR im sessionStorage (pro Browser-Session,
-// kein Persistieren auf der Platte). Bei jedem Request werden sie als Header
-// mitgeschickt. Neuer Browser-Besuch = sessionStorage leer = erneuter
-// PIN-/Passkey-Login erforderlich.
+// FlareHub - stateless auth helpers (no cookie!)
+// Login token & admin grant live ONLY in the sessionStorage (per browser session,
+// no persistence on disk). They are sent as headers on every request.
+// New browser visit = empty sessionStorage = fresh PIN/passkey login required.
 
 const AUTH_TOKEN_KEY = 'flarehub_token';
 const ADMIN_GRANT_KEY = 'flarehub_admin_grant';
 const REVEAL_IPS_KEY = 'flarehub_reveal_ips';
 
-// Endpunkte, die auch bei gültiger Session legitime 401-Antworten liefern
-// (z.B. falsche PIN auf der Login-Seite) - dort NICHT automatisch weiterleiten.
+// Endpoints that legitimately return 401 even with a valid session
+// (e.g. wrong PIN on the login page) - do NOT redirect there automatically.
 const LOGIN_FLOW_ENDPOINTS = [
     '/api/auth/status',
     '/api/auth/verify-pin',
@@ -33,7 +32,7 @@ function setAdminGrant(grant) {
     sessionStorage.setItem(ADMIN_GRANT_KEY, grant);
 }
 
-// Privacy: IP-Maskierung im Security-Feed nur mit aktivem Admin-Grant deaktivierbar
+// Privacy: IP masking in the security feed can only be disabled with an active admin grant
 function getRevealIps() {
     return sessionStorage.getItem(REVEAL_IPS_KEY) === '1';
 }
@@ -49,8 +48,8 @@ function clearAuth() {
     sessionStorage.removeItem(REVEAL_IPS_KEY);
 }
 
-// Fetch-Wrapper: haengt Authorization-, Admin-Grant- und Reveal-IPs-Header an und
-// leitet bei abgelaufenem Token automatisch zum Login weiter.
+// Fetch wrapper: attaches Authorization, admin-grant and reveal-IPs headers and
+// redirects to the login page automatically when the token has expired.
 async function authFetch(url, options = {}) {
     const opts = Object.assign({}, options);
     opts.headers = Object.assign({}, options.headers || {});
@@ -66,7 +65,7 @@ async function authFetch(url, options = {}) {
     if (res.status === 401 && token && !LOGIN_FLOW_ENDPOINTS.includes(path)) {
         clearAuth();
         window.location.href = '/login';
-        throw new Error('Nicht authentifiziert');
+        throw new Error('Not authenticated');
     }
     return res;
 }

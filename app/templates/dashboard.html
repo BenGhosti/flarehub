@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de" data-theme="{{ default_theme }}">
+<html lang="en" data-theme="{{ default_theme }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -9,13 +9,13 @@
     <script src="/static/vendor/chart.umd.min.js"></script>
     {% if auth_required %}
     <script>
-        // Kein Token im sessionStorage => neuer Browser-Besuch => Login erzwingen
+        // No token in sessionStorage => new browser visit => force login
         if (!getAuthToken()) window.location.replace('/login');
     </script>
     {% endif %}
 </head>
 <body>
-    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Theme wechseln">
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle theme">
         <svg xmlns="http://www.w3.org/2000/svg" class="theme-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path class="moon" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
             <circle class="sun" cx="12" cy="12" r="5" style="display:none"/>
@@ -49,21 +49,21 @@
                     <button type="button" class="btn-ghost">Admin</button>
                 </a>
                 <a href="/settings" style="text-decoration:none;">
-                    <button type="button" class="btn-ghost">Einstellungen</button>
+                    <button type="button" class="btn-ghost">Settings</button>
                 </a>
-                <button id="logout-btn" type="button" class="btn-ghost">Abmelden</button>
+                <button id="logout-btn" type="button" class="btn-ghost">Log out</button>
             </div>
         </div>
 
         {% if not zone_configured %}
         <div class="card banner banner-danger">
-            <strong>⚠️ Cloudflare nicht konfiguriert</strong>
-            <p>Bitte <code>CLOUDFLARE_API_TOKEN</code> und <code>CLOUDFLARE_ZONE_ID</code> in der .env setzen, damit Analytics-Daten abgerufen werden können.</p>
+            <strong>⚠️ Cloudflare not configured</strong>
+            <p>Please set <code>CLOUDFLARE_API_TOKEN</code> and <code>CLOUDFLARE_ZONE_ID</code> in the .env so that analytics data can be fetched.</p>
         </div>
         {% endif %}
 
         <div class="card banner banner-warning" id="collector-error-banner" style="display:none;">
-            <strong>⚠️ Letzter Collector-Lauf fehlgeschlagen</strong>
+            <strong>⚠️ Last collector run failed</strong>
             <p id="collector-error-text"></p>
         </div>
 
@@ -92,8 +92,8 @@
             <h3 class="card-title">Quick Actions</h3>
             {% if not zone_configured %}
             <p class="action-desc" style="margin-bottom:0.75rem; opacity:0.75;">
-                ⚠️ Cloudflare nicht konfiguriert – Quick Actions sind deaktiviert.
-                <code>CLOUDFLARE_API_TOKEN</code> / <code>CLOUDFLARE_ZONE_ID</code> in der .env setzen.
+                ⚠️ Cloudflare not configured – Quick Actions are disabled.
+                Set <code>CLOUDFLARE_API_TOKEN</code> / <code>CLOUDFLARE_ZONE_ID</code> in the .env.
             </p>
             {% endif %}
             <div class="actions-grid" {% if not zone_configured %}style="opacity:0.45; pointer-events:none;"{% endif %}>
@@ -101,7 +101,7 @@
                 <div class="action-item">
                     <div>
                         <span class="action-title">Development Mode</span>
-                        <span class="action-desc">Deaktiviert Caching temporär für Live-Debugging</span>
+                        <span class="action-desc">Temporarily disables caching for live debugging</span>
                     </div>
                     <label class="switch">
                         <input type="checkbox" id="toggle-dev-mode">
@@ -113,7 +113,7 @@
                 <div class="action-item">
                     <div>
                         <span class="action-title">Under Attack Mode</span>
-                        <span class="action-desc">Zeigt allen Besuchern eine JS-Challenge vor Zugriff</span>
+                        <span class="action-desc">Shows all visitors a JS challenge before access</span>
                     </div>
                     <label class="switch">
                         <input type="checkbox" id="toggle-under-attack">
@@ -124,8 +124,8 @@
                 {% if feature_purge_cache %}
                 <div class="action-item">
                     <div>
-                        <span class="action-title">Cache leeren</span>
-                        <span class="action-desc">Löscht den gesamten Edge-Cache dieser Zone</span>
+                        <span class="action-title">Clear cache</span>
+                        <span class="action-desc">Purges the entire edge cache of this zone</span>
                     </div>
                     <button id="btn-purge-cache" type="button" class="btn-small">Purge</button>
                 </div>
@@ -150,7 +150,7 @@
         <div class="card chart-card" style="text-align:left;">
             <h3 class="card-title">Requests</h3>
             <div class="chart-wrap"><canvas id="chart-requests"></canvas></div>
-            <p class="chart-empty" id="chart-requests-empty" style="display:none;">Noch keine Daten für diesen Zeitraum</p>
+            <p class="chart-empty" id="chart-requests-empty" style="display:none;">No data for this period</p>
         </div>
         {% endif %}
 
@@ -160,7 +160,7 @@
             <div class="card chart-card chart-card-half" style="text-align:left;">
                 <h3 class="card-title">Bandbreite (MB)</h3>
                 <div class="chart-wrap"><canvas id="chart-bandwidth"></canvas></div>
-                <p class="chart-empty" id="chart-bandwidth-empty" style="display:none;">Noch keine Daten für diesen Zeitraum</p>
+                <p class="chart-empty" id="chart-bandwidth-empty" style="display:none;">No data for this period</p>
             </div>
             {% endif %}
 
@@ -168,7 +168,7 @@
             <div class="card chart-card chart-card-half" style="text-align:left;">
                 <h3 class="card-title">Cache-Ratio</h3>
                 <div class="chart-wrap"><canvas id="chart-cache-ratio"></canvas></div>
-                <p class="chart-empty" id="chart-cache-ratio-empty" style="display:none;">Noch keine Daten für diesen Zeitraum</p>
+                <p class="chart-empty" id="chart-cache-ratio-empty" style="display:none;">No data for this period</p>
             </div>
             {% endif %}
         </div>
@@ -180,7 +180,7 @@
             <div class="card chart-card chart-card-half" style="text-align:left;">
                 <h3 class="card-title">Cache-Aufteilung</h3>
                 <div class="chart-wrap"><canvas id="chart-cache-donut"></canvas></div>
-                <p class="chart-empty" id="chart-cache-donut-empty" style="display:none;">Noch keine Daten für diesen Zeitraum</p>
+                <p class="chart-empty" id="chart-cache-donut-empty" style="display:none;">No data for this period</p>
             </div>
             {% endif %}
 
@@ -188,7 +188,7 @@
             <div class="card chart-card chart-card-half" style="text-align:left;">
                 <h3 class="card-title">Cached vs. Uncached</h3>
                 <div class="chart-wrap"><canvas id="chart-cached-uncached"></canvas></div>
-                <p class="chart-empty" id="chart-cached-uncached-empty" style="display:none;">Noch keine Daten für diesen Zeitraum</p>
+                <p class="chart-empty" id="chart-cached-uncached-empty" style="display:none;">No data for this period</p>
             </div>
             {% endif %}
         </div>
@@ -200,7 +200,7 @@
             <div class="card chart-card chart-card-half" style="text-align:left;">
                 <h3 class="card-title">Unique Visitors</h3>
                 <div class="chart-wrap"><canvas id="chart-visitors"></canvas></div>
-                <p class="chart-empty" id="chart-visitors-empty" style="display:none;">Noch keine Daten für diesen Zeitraum</p>
+                <p class="chart-empty" id="chart-visitors-empty" style="display:none;">No data for this period</p>
             </div>
             {% endif %}
 
@@ -208,7 +208,7 @@
             <div class="card chart-card chart-card-half" style="text-align:left;">
                 <h3 class="card-title">Page Views</h3>
                 <div class="chart-wrap"><canvas id="chart-pageviews"></canvas></div>
-                <p class="chart-empty" id="chart-pageviews-empty" style="display:none;">Noch keine Daten für diesen Zeitraum</p>
+                <p class="chart-empty" id="chart-pageviews-empty" style="display:none;">No data for this period</p>
             </div>
             {% endif %}
         </div>
@@ -220,7 +220,7 @@
             <div class="card chart-card chart-card-half" style="text-align:left;">
                 <h3 class="card-title">Threats</h3>
                 <div class="chart-wrap"><canvas id="chart-threats"></canvas></div>
-                <p class="chart-empty" id="chart-threats-empty" style="display:none;">Noch keine Daten für diesen Zeitraum</p>
+                <p class="chart-empty" id="chart-threats-empty" style="display:none;">No data for this period</p>
             </div>
             {% endif %}
 
@@ -228,7 +228,7 @@
             <div class="card chart-card chart-card-half" style="text-align:left;">
                 <h3 class="card-title">Threat-Aktionen</h3>
                 <div class="chart-wrap"><canvas id="chart-threat-donut"></canvas></div>
-                <p class="chart-empty" id="chart-threat-donut-empty" style="display:none;">Noch keine Ereignisse für diesen Zeitraum</p>
+                <p class="chart-empty" id="chart-threat-donut-empty" style="display:none;">No events for this period</p>
             </div>
             {% endif %}
         </div>
@@ -238,9 +238,9 @@
         <div class="chart-row">
             {% if feature_country_chart %}
             <div class="card chart-card chart-card-half" style="text-align:left;">
-                <h3 class="card-title">Top-Herkunftsländer (24h)</h3>
+                <h3 class="card-title">Top Origin Countries (24h)</h3>
                 <div class="chart-wrap"><canvas id="chart-countries"></canvas></div>
-                <p class="chart-empty" id="chart-countries-empty" style="display:none;">Noch keine Daten (passiver Collector-Lauf nötig)</p>
+                <p class="chart-empty" id="chart-countries-empty" style="display:none;">No data yet (passive collector run required)</p>
             </div>
             {% endif %}
 
@@ -248,7 +248,7 @@
             <div class="card chart-card chart-card-half" style="text-align:left;">
                 <h3 class="card-title">HTTP-Statuscodes (24h)</h3>
                 <div class="chart-wrap"><canvas id="chart-status-codes"></canvas></div>
-                <p class="chart-empty" id="chart-status-codes-empty" style="display:none;">Noch keine Daten (passiver Collector-Lauf nötig)</p>
+                <p class="chart-empty" id="chart-status-codes-empty" style="display:none;">No data yet (passive collector run required)</p>
             </div>
             {% endif %}
         </div>
@@ -256,14 +256,14 @@
 
         {% if feature_security_feed %}
         <div class="card" style="text-align:left;">
-            <h3 class="card-title">Security-Feed</h3>
+            <h3 class="card-title">Security Feed</h3>
             <div style="overflow-x:auto;">
                 <table class="feed-table" id="security-feed-table">
                     <thead>
-                        <tr><th>Zeit</th><th>IP</th><th>Land</th><th>Aktion</th><th>Pfad</th></tr>
+                        <tr><th>Time</th><th>IP</th><th>Country</th><th>Action</th><th>Path</th></tr>
                     </thead>
                     <tbody id="security-feed-body">
-                        <tr><td colspan="5" class="feed-empty">Lade Daten...</td></tr>
+                        <tr><td colspan="5" class="feed-empty">Loading data...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -275,7 +275,7 @@
         const AUTO_REFRESH_SECONDS = {{ auto_refresh_seconds }};
         let currentRange = '24h';
 
-        // --- Theme (localStorage + Server-Default) ---
+        // --- Theme (localStorage + server default) ---
         const savedTheme = localStorage.getItem('theme') || '{{ default_theme }}';
         document.documentElement.setAttribute('data-theme', savedTheme);
         applyThemeIcon(savedTheme);
@@ -286,7 +286,7 @@
             document.documentElement.setAttribute('data-theme', next);
             localStorage.setItem('theme', next);
             applyThemeIcon(next);
-            loadTimeseries(); // Chart-Textfarben neu anwenden
+            loadTimeseries(); // re-apply chart text colors
             loadDonuts();
         });
 
@@ -301,7 +301,7 @@
         });
 
         function fmtNumber(n) {
-            return new Intl.NumberFormat('de-DE').format(n);
+            return new Intl.NumberFormat('en-US').format(n);
         }
 
         function esc(s) {
@@ -311,13 +311,13 @@
         }
 
         function fmtRelativeTime(isoString) {
-            if (!isoString) return 'keine Daten';
+            if (!isoString) return 'no data';
             const diffMs = Date.now() - new Date(isoString + 'Z').getTime();
             const diffMin = Math.round(diffMs / 60000);
-            if (diffMin < 1) return 'gerade eben';
-            if (diffMin < 60) return `vor ${diffMin} Min.`;
+            if (diffMin < 1) return 'just now';
+            if (diffMin < 60) return `${diffMin} min. ago`;
             const diffH = Math.round(diffMin / 60);
-            return `vor ${diffH} Std.`;
+            return `${diffH} h ago`;
         }
 
         async function loadSummary() {
@@ -338,7 +338,7 @@
             const banner = document.getElementById('collector-error-banner');
             const text = document.getElementById('collector-error-text');
             if (data.last_run && !data.last_run.success) {
-                text.textContent = data.last_run.message || 'Unbekannter Fehler';
+                text.textContent = data.last_run.message || 'Unknown error';
                 banner.style.display = 'block';
             } else {
                 banner.style.display = 'none';
@@ -581,7 +581,7 @@
         }
 
         async function loadPassiveAnalytics() {
-            // Top-Herkunftsländer (passiv, letzte 24h)
+            // Top origin countries (passive, last 24h)
             const countryCanvas = document.getElementById('chart-countries');
             if (countryCanvas) {
                 const res = await authFetch('/api/analytics/countries');
@@ -669,12 +669,12 @@
             if (!res.ok) return;
             const events = await res.json();
             if (!events.length) {
-                body.innerHTML = '<tr><td colspan="5" class="feed-empty">Keine Ereignisse im gewählten Zeitraum</td></tr>';
+                body.innerHTML = '<tr><td colspan="5" class="feed-empty">No events in the selected period</td></tr>';
                 return;
             }
             body.innerHTML = events.map(e => `
                 <tr>
-                    <td>${new Date(e.timestamp).toLocaleString('de-DE')}</td>
+                    <td>${new Date(e.timestamp).toLocaleString('en-GB')}</td>
                     <td>${esc(e.client_ip) || '–'}</td>
                     <td>${esc(e.country) || '–'}</td>
                     <td><span class="action-badge ${actionBadgeClass(e.action)}">${esc(e.action) || '–'}</span></td>
@@ -709,9 +709,9 @@
                     body: JSON.stringify({ enabled: e.target.checked })
                 });
                 if (!res.ok) throw new Error((await res.json()).detail);
-                showFeedback('Development Mode aktualisiert');
+                showFeedback('Development Mode updated');
             } catch (err) {
-                showFeedback('Fehler: ' + err.message, true);
+                showFeedback('Error: ' + err.message, true);
                 e.target.checked = !e.target.checked;
             }
         });
@@ -724,9 +724,9 @@
                     body: JSON.stringify({ enabled: e.target.checked })
                 });
                 if (!res.ok) throw new Error((await res.json()).detail);
-                showFeedback('Under Attack Mode aktualisiert');
+                showFeedback('Under Attack Mode updated');
             } catch (err) {
-                showFeedback('Fehler: ' + err.message, true);
+                showFeedback('Error: ' + err.message, true);
                 e.target.checked = !e.target.checked;
             }
         });
@@ -736,9 +736,9 @@
             try {
                 const res = await authFetch('/api/zone/purge-cache', { method: 'POST' });
                 if (!res.ok) throw new Error((await res.json()).detail);
-                showFeedback('Cache erfolgreich geleert');
+                showFeedback('Cache purged successfully');
             } catch (err) {
-                showFeedback('Fehler: ' + err.message, true);
+                showFeedback('Error: ' + err.message, true);
             } finally {
                 e.target.disabled = false;
             }
