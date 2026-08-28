@@ -30,7 +30,11 @@ from app.database import (
 
 logger = logging.getLogger("flarehub.collector")
 
-ANALYTICS_QUERY = """
+# Dataset resolution used at runtime (probed once per process):
+# "1m" = httpRequests1mGroups (higher plans), "1h" = httpRequests1hGroups (all plans).
+_analytics_resolution: str | None = None
+
+ANALYTICS_QUERY_1M = """
 query GetZoneAnalytics($zoneTag: string, $since: Time, $until: Time, $limit: Int) {
   viewer {
     zones(filter: { zoneTag: $zoneTag }) {
@@ -40,6 +44,34 @@ query GetZoneAnalytics($zoneTag: string, $since: Time, $until: Time, $limit: Int
         orderBy: [datetime_ASC]
       ) {
         dimensions { datetime }
+        sum {
+          requests
+          cachedRequests
+          bytes
+          cachedBytes
+          threats
+          pageViews
+        }
+        uniq { uniques }
+      }
+    }
+  }
+}
+"""
+
+# Hourly fallback dataset - available on ALL plans. Used automatically when the
+# zone has no access to httpRequests1mGroups (higher-plan dataset, error:
+# "does not have access to the path").
+ANALYTICS_QUERY_1H = """
+query GetZoneAnalyticsHourly($zoneTag: string, $since: Time, $until: Time, $limit: Int) {
+  viewer {
+    zones(filter: { zoneTag: $zoneTag }) {
+      httpRequests1hGroups(
+        limit: $limit
+        filter: { datetime_geq: $since, datetime_leq: $until }
+        orderBy: [datetimeHour_ASC]
+      ) {
+        dimensions { datetimeHour }
         sum {
           requests
           cachedRequests
@@ -103,7 +135,7 @@ query GetPassiveAnalytics($zoneTag: string, $since: Time, $until: Time, $limit: 
 
 def _headers() -> dict:
     """Rebuild headers on every call so a token changed at runtime takes effect immediately.
-    The Authorization header is only set when a token exists – an empty Bearer value
+    The Authorization header is only set when a token exists - an empty Bearer value
     (f"Bearer " + '') would otherwise cause a LocalProtocolError and an unhandled 500
     in httpx/httpcore."""
     headers = {"Content-Type": "application/json"}
@@ -180,6 +212,52 @@ def _zone_error_hint(error: str) -> str:
     return error
 
 
+def _is_dataset_access_error(error: str) -> bool:
+    """True if Cloudflare denies access to the requested dataset node (plan limitation)."""
+    lowered = error.lower()
+    return (
+        "does not have access to the path" in lowered
+        or "not authorized for that account" in lowered
+        or "are not authorized" in lowered
+    )
+
+
+def _dataset_access_hint(error: str) -> str:
+    if _is_dataset_access_error(error):
+        return error + " (this dataset requires a higher Cloudflare plan for the zone)"
+    return error
+
+
+def _current_analytics_query() -> tuple[str, str]:
+    """Returns (query, resolution) for the analytics fetch - falls back to the hourly
+    dataset when the zone has no access to the 1-minute dataset (plan limit)."""
+    global _analytics_resolution
+    if _analytics_resolution == "1h":
+        return ANALYTICS_QUERY_1H, "1h"
+    return ANALYTICS_QUERY_1M, "1m"
+
+
+def _fallback_to_hourly():
+    global _analytics_resolution
+    _analytics_resolution = "1h"
+    logger.info(
+        "Cloudflare zone has no access to httpRequests1mGroups (plan limitation) - "
+        "falling back to httpRequests1hGroups (hourly resolution)"
+    )
+
+
+async def _analytics_query_with_fallback(variables: dict) -> tuple[dict | None, str | None, str]:
+    """Runs the analytics query with automatic dataset fallback.
+    Returns (data, error, resolution)."""
+    query, resolution = _current_analytics_query()
+    data, error = await _graphql_request(query, variables)
+    if error and resolution == "1m" and _is_dataset_access_error(error):
+        _fallback_to_hourly()
+        query, resolution = _current_analytics_query()
+        data, error = await _graphql_request(query, variables)
+    return data, error, resolution
+
+
 async def verify_zone_access() -> dict:
     """Validates token + zone via the same GraphQL query the collector uses (read-only).
     Returns {"configured": bool, "ok": bool, "error": str | None}.
@@ -193,7 +271,7 @@ async def verify_zone_access() -> dict:
     until = datetime.now(timezone.utc)
     since = until - timedelta(hours=1)
 
-    data, error = await _graphql_request(ANALYTICS_QUERY, {
+    data, error, _ = await _analytics_query_with_fallback({
         "zoneTag": settings.CLOUDFLARE_ZONE_ID,
         "since": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "until": until.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -229,7 +307,7 @@ async def fetch_analytics_and_store():
         "limit": settings.COLLECTOR_MAX_RECORDS_PER_QUERY,
     }
 
-    data, error = await _graphql_request(ANALYTICS_QUERY, variables)
+    data, error, resolution = await _analytics_query_with_fallback(variables)
     duration_ms = int((time.monotonic() - start_ts) * 1000)
 
     if error:
@@ -244,6 +322,8 @@ async def fetch_analytics_and_store():
 
     zones = data.get("viewer", {}).get("zones", [])
     groups = zones[0].get("httpRequests1mGroups", []) if zones else []
+    if resolution == "1h":
+        groups = zones[0].get("httpRequests1hGroups", []) if zones else []
 
     records_stored = 0
     if not groups:
@@ -270,36 +350,75 @@ async def fetch_analytics_and_store():
                 totals["unique_visitors"], g.get("uniq", {}).get("uniques", 0)
             )
 
-        db = SessionLocal()
-        try:
-            snapshot = AnalyticsSnapshot(
-                timestamp=until.replace(tzinfo=None),
-                requests_total=totals["requests_total"],
-                requests_cached=totals["requests_cached"],
-                requests_uncached=totals["requests_total"] - totals["requests_cached"],
-                bandwidth_total_bytes=totals["bandwidth_total_bytes"],
-                bandwidth_cached_bytes=totals["bandwidth_cached_bytes"],
-                bandwidth_uncached_bytes=totals["bandwidth_total_bytes"] - totals["bandwidth_cached_bytes"],
-                threats_total=totals["threats_total"],
-                page_views=totals["page_views"],
-                unique_visitors=totals["unique_visitors"],
-            )
-            db.add(snapshot)
-            db.commit()
-            records_stored = len(groups)
-            logger.info(f"Analytics snapshot stored: {totals['requests_total']} requests ({records_stored} raw data points)")
-
-            # Passive alerting: threat spike in the last interval
-            if (
-                settings.WEBHOOK_ENABLED
-                and settings.WEBHOOK_ON_THREAT_SPIKE
-                and totals["threats_total"] >= settings.WEBHOOK_THREAT_THRESHOLD
-            ):
-                await send_webhook_notification(
-                    f"⚠️ Threat spike detected: {totals['threats_total']} blocked requests in the last interval"
+        if resolution == "1h":
+            # Hourly fallback: the API returns the current hour's cumulative total.
+            # Store exactly ONE snapshot per hour, otherwise the rollup would sum the
+            # same hour multiple times and overcount.
+            snapshot_ts = until.replace(tzinfo=None).replace(minute=0, second=0, microsecond=0)
+            db = SessionLocal()
+            try:
+                already_stored = (
+                    db.query(AnalyticsSnapshot)
+                    .filter(AnalyticsSnapshot.timestamp == snapshot_ts)
+                    .first()
                 )
-        finally:
-            db.close()
+                if already_stored:
+                    logger.info("Snapshot for the current hour already stored - skipping (hourly fallback)")
+                else:
+                    db.add(AnalyticsSnapshot(
+                        timestamp=snapshot_ts,
+                        requests_total=totals["requests_total"],
+                        requests_cached=totals["requests_cached"],
+                        requests_uncached=totals["requests_total"] - totals["requests_cached"],
+                        bandwidth_total_bytes=totals["bandwidth_total_bytes"],
+                        bandwidth_cached_bytes=totals["bandwidth_cached_bytes"],
+                        bandwidth_uncached_bytes=totals["bandwidth_total_bytes"] - totals["bandwidth_cached_bytes"],
+                        threats_total=totals["threats_total"],
+                        page_views=totals["page_views"],
+                        unique_visitors=totals["unique_visitors"],
+                    ))
+                    db.commit()
+                    records_stored = len(groups)
+                    logger.info(
+                        f"Analytics snapshot stored: {totals['requests_total']} requests "
+                        f"({records_stored} data points, hourly resolution)"
+                    )
+            finally:
+                db.close()
+        else:
+            db = SessionLocal()
+            try:
+                db.add(AnalyticsSnapshot(
+                    timestamp=until.replace(tzinfo=None),
+                    requests_total=totals["requests_total"],
+                    requests_cached=totals["requests_cached"],
+                    requests_uncached=totals["requests_total"] - totals["requests_cached"],
+                    bandwidth_total_bytes=totals["bandwidth_total_bytes"],
+                    bandwidth_cached_bytes=totals["bandwidth_cached_bytes"],
+                    bandwidth_uncached_bytes=totals["bandwidth_total_bytes"] - totals["bandwidth_cached_bytes"],
+                    threats_total=totals["threats_total"],
+                    page_views=totals["page_views"],
+                    unique_visitors=totals["unique_visitors"],
+                ))
+                db.commit()
+                records_stored = len(groups)
+                logger.info(
+                    f"Analytics snapshot stored: {totals['requests_total']} requests "
+                    f"({records_stored} raw data points)"
+                )
+            finally:
+                db.close()
+
+        # Passive alerting: threat spike in the last interval (only when a new snapshot was stored)
+        if (
+            records_stored
+            and settings.WEBHOOK_ENABLED
+            and settings.WEBHOOK_ON_THREAT_SPIKE
+            and totals["threats_total"] >= settings.WEBHOOK_THREAT_THRESHOLD
+        ):
+            await send_webhook_notification(
+                f"⚠️ Threat spike detected: {totals['threats_total']} blocked requests in the last interval"
+            )
 
     firewall_records = 0
     firewall_error = None
@@ -342,6 +461,7 @@ async def fetch_firewall_events() -> tuple[int, str | None]:
 
     data, error = await _graphql_request(FIREWALL_EVENTS_QUERY, variables)
     if error:
+        error = _dataset_access_hint(error)
         logger.warning(f"Cloudflare firewall events query skipped: {error}")
         return 0, error
 
@@ -496,6 +616,7 @@ async def fetch_passive_analytics_and_store() -> tuple[int, str | None]:
 
     data, error = await _graphql_request(PASSIVE_ANALYTICS_QUERY, variables)
     if error:
+        error = _dataset_access_hint(error)
         logger.warning(f"Passive analytics skipped: {error}")
         return 0, error
 

@@ -143,6 +143,10 @@ test-webserver.bat 8080     :: custom port
 
 - Used GraphQL node: `httpRequests1mGroups` (zone-scoped, 10-minute raw values for
   requests, cache hits, bandwidth, threats, page views, unique visitors).
+- **Automatic plan fallback:** the `httpRequests1mGroups` dataset is only available to
+  zones on higher plans. If Cloudflare responds with "zone does not have access to the path",
+  FlareHub automatically falls back to `httpRequests1hGroups` (hourly aggregates, available
+  on all plans) – the collector then stores one snapshot per hour instead of per 10 minutes.
 - Firewall events via `firewallEventsAdaptive`.
 - Cloudflare limits the collector respects: GraphQL rate limit on Cloudflare's side (default
   300 queries/5 min.), max. 10,000 records per response (we query significantly more
