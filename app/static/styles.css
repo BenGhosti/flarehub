@@ -355,7 +355,7 @@ input:checked + .slider:before { transform: translateX(20px); }
     .chart-row { grid-template-columns: 1fr; }
 }
 
-/* ---------- Insights (deltas, cache savings, heatmap, threat briefing) ---------- */
+/* ---------- Insights (deltas, threat briefing) ---------- */
 .summary-delta {
     font-size: 0.72rem;
     font-weight: 600;
@@ -370,28 +370,6 @@ input:checked + .slider:before { transform: translateX(20px); }
     color: var(--danger-color);
     opacity: 0.9;
     margin-left: 0.5rem;
-}
-.kpi-line {
-    font-size: 0.85rem;
-    font-weight: 600;
-    margin-bottom: 0.75rem;
-    color: var(--highlight-color);
-}
-
-.heatmap-container {
-    display: grid;
-    grid-auto-flow: column;
-    grid-template-rows: repeat(7, 10px);
-    gap: 2px;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    min-height: 84px;
-}
-.heatmap-day {
-    width: 10px;
-    height: 10px;
-    border-radius: 2px;
-    background: var(--progress-bg);
 }
 
 .briefing-stats {
