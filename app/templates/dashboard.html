@@ -14,46 +14,11 @@
     </script>
     {% endif %}
 </head>
-<body>
-    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle theme">
-        <svg xmlns="http://www.w3.org/2000/svg" class="theme-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path class="moon" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-            <circle class="sun" cx="12" cy="12" r="5" style="display:none"/>
-            <line class="sun" x1="12" y1="1" x2="12" y2="3" style="display:none"/>
-            <line class="sun" x1="12" y1="21" x2="12" y2="23" style="display:none"/>
-            <line class="sun" x1="4.22" y1="4.22" x2="5.64" y2="5.64" style="display:none"/>
-            <line class="sun" x1="18.36" y1="18.36" x2="19.78" y2="19.78" style="display:none"/>
-            <line class="sun" x1="1" y1="12" x2="3" y2="12" style="display:none"/>
-            <line class="sun" x1="21" y1="12" x2="23" y2="12" style="display:none"/>
-            <line class="sun" x1="4.22" y1="19.78" x2="5.64" y2="18.36" style="display:none"/>
-            <line class="sun" x1="18.36" y1="5.64" x2="19.78" y2="4.22" style="display:none"/>
-        </svg>
-    </button>
+<body class="with-sidebar">
+    {% include "nav.html" %}
 
     <div class="container" style="max-width: 1140px;">
-        <div class="top-bar">
-            <div class="brand-row">
-                <span class="brand-dot"></span>
-                <h1>{{ app_name }}</h1>
-            </div>
-            <div class="top-actions">
-                <span id="live-indicator" class="live-indicator" title="Letztes Update">
-                    <span class="live-dot"></span><span id="live-text">–</span>
-                </span>
-                {% if feature_action_center %}
-                <a href="/actions" style="text-decoration:none;">
-                    <button type="button" class="btn-ghost">Action Center</button>
-                </a>
-                {% endif %}
-                <a href="/admin" style="text-decoration:none;">
-                    <button type="button" class="btn-ghost">Admin</button>
-                </a>
-                <a href="/settings" style="text-decoration:none;">
-                    <button type="button" class="btn-ghost">Settings</button>
-                </a>
-                <button id="logout-btn" type="button" class="btn-ghost">Log out</button>
-            </div>
-        </div>
+        <h1 class="page-title">Dashboard</h1>
 
         {% if not zone_configured %}
         <div class="card banner banner-danger">
@@ -79,11 +44,11 @@
                 <span class="summary-value" id="stat-requests">–</span>
             </div>
             <div class="card summary-card">
-                <span class="summary-label">Cache-Ratio</span>
+                <span class="summary-label">Cache Ratio</span>
                 <span class="summary-value" id="stat-cache-ratio">–</span>
             </div>
             <div class="card summary-card">
-                <span class="summary-label">Bandbreite (24h)</span>
+                <span class="summary-label">Bandwidth (24h)</span>
                 <span class="summary-value" id="stat-bandwidth">–</span>
             </div>
             <div class="card summary-card">
@@ -154,7 +119,10 @@
         {% if feature_requests_chart %}
         <div class="card chart-card" style="text-align:left;">
             <h3 class="card-title">Requests</h3>
-            <div class="chart-wrap"><canvas id="chart-requests"></canvas></div>
+            <div class="chart-wrap">
+                <div class="skeleton chart-loading" id="chart-requests-loading"></div>
+                <canvas id="chart-requests"></canvas>
+            </div>
             <p class="chart-empty" id="chart-requests-empty" style="display:none;">No data for this period</p>
         </div>
         {% endif %}
@@ -163,16 +131,22 @@
         <div class="chart-row">
             {% if feature_bandwidth_chart %}
             <div class="card chart-card chart-card-half" style="text-align:left;">
-                <h3 class="card-title">Bandbreite (MB)</h3>
-                <div class="chart-wrap"><canvas id="chart-bandwidth"></canvas></div>
+                <h3 class="card-title">Bandwidth (MB)</h3>
+                <div class="chart-wrap">
+                    <div class="skeleton chart-loading" id="chart-bandwidth-loading"></div>
+                    <canvas id="chart-bandwidth"></canvas>
+                </div>
                 <p class="chart-empty" id="chart-bandwidth-empty" style="display:none;">No data for this period</p>
             </div>
             {% endif %}
 
             {% if feature_cache_ratio_chart %}
             <div class="card chart-card chart-card-half" style="text-align:left;">
-                <h3 class="card-title">Cache-Ratio</h3>
-                <div class="chart-wrap"><canvas id="chart-cache-ratio"></canvas></div>
+                <h3 class="card-title">Cache Ratio</h3>
+                <div class="chart-wrap">
+                    <div class="skeleton chart-loading" id="chart-cache-ratio-loading"></div>
+                    <canvas id="chart-cache-ratio"></canvas>
+                </div>
                 <p class="chart-empty" id="chart-cache-ratio-empty" style="display:none;">No data for this period</p>
             </div>
             {% endif %}
@@ -183,8 +157,11 @@
         <div class="chart-row">
             {% if feature_cache_donut_chart %}
             <div class="card chart-card chart-card-half" style="text-align:left;">
-                <h3 class="card-title">Cache-Aufteilung</h3>
-                <div class="chart-wrap"><canvas id="chart-cache-donut"></canvas></div>
+                <h3 class="card-title">Cache Split</h3>
+                <div class="chart-wrap">
+                    <div class="skeleton chart-loading" id="chart-cache-donut-loading"></div>
+                    <canvas id="chart-cache-donut"></canvas>
+                </div>
                 <p class="chart-empty" id="chart-cache-donut-empty" style="display:none;">No data for this period</p>
             </div>
             {% endif %}
@@ -192,7 +169,10 @@
             {% if feature_cached_uncached_chart %}
             <div class="card chart-card chart-card-half" style="text-align:left;">
                 <h3 class="card-title">Cached vs. Uncached</h3>
-                <div class="chart-wrap"><canvas id="chart-cached-uncached"></canvas></div>
+                <div class="chart-wrap">
+                    <div class="skeleton chart-loading" id="chart-cached-uncached-loading"></div>
+                    <canvas id="chart-cached-uncached"></canvas>
+                </div>
                 <p class="chart-empty" id="chart-cached-uncached-empty" style="display:none;">No data for this period</p>
             </div>
             {% endif %}
@@ -204,7 +184,10 @@
             {% if feature_visitors_chart %}
             <div class="card chart-card chart-card-half" style="text-align:left;">
                 <h3 class="card-title">Unique Visitors</h3>
-                <div class="chart-wrap"><canvas id="chart-visitors"></canvas></div>
+                <div class="chart-wrap">
+                    <div class="skeleton chart-loading" id="chart-visitors-loading"></div>
+                    <canvas id="chart-visitors"></canvas>
+                </div>
                 <p class="chart-empty" id="chart-visitors-empty" style="display:none;">No data for this period</p>
             </div>
             {% endif %}
@@ -212,7 +195,10 @@
             {% if feature_pageviews_chart %}
             <div class="card chart-card chart-card-half" style="text-align:left;">
                 <h3 class="card-title">Page Views</h3>
-                <div class="chart-wrap"><canvas id="chart-pageviews"></canvas></div>
+                <div class="chart-wrap">
+                    <div class="skeleton chart-loading" id="chart-pageviews-loading"></div>
+                    <canvas id="chart-pageviews"></canvas>
+                </div>
                 <p class="chart-empty" id="chart-pageviews-empty" style="display:none;">No data for this period</p>
             </div>
             {% endif %}
@@ -224,15 +210,21 @@
             {% if feature_threats_chart %}
             <div class="card chart-card chart-card-half" style="text-align:left;">
                 <h3 class="card-title">Threats</h3>
-                <div class="chart-wrap"><canvas id="chart-threats"></canvas></div>
+                <div class="chart-wrap">
+                    <div class="skeleton chart-loading" id="chart-threats-loading"></div>
+                    <canvas id="chart-threats"></canvas>
+                </div>
                 <p class="chart-empty" id="chart-threats-empty" style="display:none;">No data for this period</p>
             </div>
             {% endif %}
 
             {% if feature_threat_donut_chart %}
             <div class="card chart-card chart-card-half" style="text-align:left;">
-                <h3 class="card-title">Threat-Aktionen</h3>
-                <div class="chart-wrap"><canvas id="chart-threat-donut"></canvas></div>
+                <h3 class="card-title">Threat Actions</h3>
+                <div class="chart-wrap">
+                    <div class="skeleton chart-loading" id="chart-threat-donut-loading"></div>
+                    <canvas id="chart-threat-donut"></canvas>
+                </div>
                 <p class="chart-empty" id="chart-threat-donut-empty" style="display:none;">No events for this period</p>
             </div>
             {% endif %}
@@ -244,15 +236,21 @@
             {% if feature_country_chart %}
             <div class="card chart-card chart-card-half" style="text-align:left;">
                 <h3 class="card-title">Top Origin Countries (24h)</h3>
-                <div class="chart-wrap"><canvas id="chart-countries"></canvas></div>
+                <div class="chart-wrap">
+                    <div class="skeleton chart-loading" id="chart-countries-loading"></div>
+                    <canvas id="chart-countries"></canvas>
+                </div>
                 <p class="chart-empty" id="chart-countries-empty" style="display:none;">No data yet (passive collector run required)</p>
             </div>
             {% endif %}
 
             {% if feature_status_chart %}
             <div class="card chart-card chart-card-half" style="text-align:left;">
-                <h3 class="card-title">HTTP-Statuscodes (24h)</h3>
-                <div class="chart-wrap"><canvas id="chart-status-codes"></canvas></div>
+                <h3 class="card-title">HTTP Status Codes (24h)</h3>
+                <div class="chart-wrap">
+                    <div class="skeleton chart-loading" id="chart-status-codes-loading"></div>
+                    <canvas id="chart-status-codes"></canvas>
+                </div>
                 <p class="chart-empty" id="chart-status-codes-empty" style="display:none;">No data yet (passive collector run required)</p>
             </div>
             {% endif %}
@@ -268,7 +266,12 @@
                         <tr><th>Time</th><th>IP</th><th>Country</th><th>Action</th><th>Path</th></tr>
                     </thead>
                     <tbody id="security-feed-body">
-                        <tr><td colspan="5" class="feed-empty">Loading data...</td></tr>
+                        <tr><td colspan="5">
+                            <div class="skeleton skeleton-row"></div>
+                            <div class="skeleton skeleton-row"></div>
+                            <div class="skeleton skeleton-row"></div>
+                            <div class="skeleton skeleton-row"></div>
+                        </td></tr>
                     </tbody>
                 </table>
             </div>
@@ -388,9 +391,11 @@
         function toggleEmpty(canvasId, isEmpty) {
             const canvas = document.getElementById(canvasId);
             const empty = document.getElementById(canvasId + '-empty');
+            const loading = document.getElementById(canvasId + '-loading');
             if (!canvas) return;
             canvas.style.display = isEmpty ? 'none' : 'block';
             if (empty) empty.style.display = isEmpty ? 'block' : 'none';
+            if (loading) loading.style.display = 'none';
         }
 
         async function loadTimeseries() {
@@ -428,7 +433,7 @@
                         data: {
                             labels: data.labels,
                             datasets: [
-                                { label: 'Bandbreite (MB)', data: data.bandwidth_total_mb, borderColor: chartColors.primary, backgroundColor: 'rgba(255,94,31,0.1)', fill: true, tension: 0.3, pointRadius: 0 }
+                                { label: 'Bandwidth (MB)', data: data.bandwidth_total_mb, borderColor: chartColors.primary, backgroundColor: 'rgba(255,94,31,0.1)', fill: true, tension: 0.3, pointRadius: 0 }
                             ]
                         },
                         options: chartOptions()
@@ -449,7 +454,7 @@
                         data: {
                             labels: data.labels,
                             datasets: [
-                                { label: 'Cache-Ratio (%)', data: ratios, borderColor: chartColors.good, backgroundColor: 'rgba(76,175,80,0.1)', fill: true, tension: 0.3, pointRadius: 0 }
+                                { label: 'Cache Ratio (%)', data: ratios, borderColor: chartColors.good, backgroundColor: 'rgba(76,175,80,0.1)', fill: true, tension: 0.3, pointRadius: 0 }
                             ]
                         },
                         options: chartOptions({ scales: { y: { min: 0, max: 100, ticks: { color: '#888', font: { size: 10 } }, grid: { color: 'rgba(128,128,128,0.15)' } }, x: { ticks: { color: '#888', maxTicksLimit: 7, font: { size: 10 } }, grid: { display: false } } } })

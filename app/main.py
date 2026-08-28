@@ -390,6 +390,8 @@ async def settings_page(request: Request):
         "default_theme": settings.DEFAULT_THEME,
         "admin_token_configured": bool(settings.ADMIN_TOKEN),
         "auth_required": not settings.auth_disabled,
+        "active_page": "settings",
+        "feature_action_center": settings.FEATURE_ACTION_CENTER,
     })
 
 
@@ -403,6 +405,8 @@ async def actions_page(request: Request):
         "auth_required": not settings.auth_disabled,
         "feature_purge_cache": settings.FEATURE_PURGE_CACHE,
         "zone_configured": bool(settings.CLOUDFLARE_API_TOKEN and settings.CLOUDFLARE_ZONE_ID),
+        "active_page": "actions",
+        "feature_action_center": settings.FEATURE_ACTION_CENTER,
     })
 
 
@@ -415,6 +419,8 @@ async def admin_page(request: Request):
         "default_theme": settings.DEFAULT_THEME,
         "auth_required": not settings.auth_disabled,
         "admin_token_configured": bool(settings.ADMIN_TOKEN),
+        "active_page": "admin",
+        "feature_action_center": settings.FEATURE_ACTION_CENTER,
     })
 
 
@@ -443,6 +449,8 @@ async def dashboard_page(request: Request):
         "feature_under_attack_toggle": settings.FEATURE_UNDER_ATTACK_TOGGLE,
         "auto_refresh_seconds": settings.DASHBOARD_AUTO_REFRESH_SECONDS,
         "zone_configured": bool(settings.CLOUDFLARE_API_TOKEN and settings.CLOUDFLARE_ZONE_ID),
+        "active_page": "dashboard",
+        "feature_action_center": settings.FEATURE_ACTION_CENTER,
     })
 
 

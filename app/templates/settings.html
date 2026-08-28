@@ -13,36 +13,24 @@
     </script>
     {% endif %}
 </head>
-<body>
-    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle theme">
-        <svg xmlns="http://www.w3.org/2000/svg" class="theme-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path class="moon" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-            <circle class="sun" cx="12" cy="12" r="5" style="display:none"/>
-            <line class="sun" x1="12" y1="1" x2="12" y2="3" style="display:none"/>
-            <line class="sun" x1="12" y1="21" x2="12" y2="23" style="display:none"/>
-            <line class="sun" x1="4.22" y1="4.22" x2="5.64" y2="5.64" style="display:none"/>
-            <line class="sun" x1="18.36" y1="18.36" x2="19.78" y2="19.78" style="display:none"/>
-            <line class="sun" x1="1" y1="12" x2="3" y2="12" style="display:none"/>
-            <line class="sun" x1="21" y1="12" x2="23" y2="12" style="display:none"/>
-            <line class="sun" x1="4.22" y1="19.78" x2="5.64" y2="18.36" style="display:none"/>
-            <line class="sun" x1="18.36" y1="5.64" x2="19.78" y2="4.22" style="display:none"/>
-        </svg>
-    </button>
+<body class="with-sidebar">
+    {% include "nav.html" %}
 
     <div class="container" style="max-width: 640px;">
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 1.5rem; flex-wrap:wrap; gap:0.5rem;">
-            <h1 style="font-size: 1.6rem; text-align:left;">Settings</h1>
-            <div style="display:flex; align-items:center; gap:0.75rem;">
-                <a href="/admin" style="font-size: 0.85rem; color: var(--highlight-color); text-decoration:none;">Admin →</a>
-                <a href="/" style="font-size: 0.85rem; color: var(--highlight-color); text-decoration:none;">← Back to dashboard</a>
-            </div>
-        </div>
+        <h1 class="page-title">Settings</h1>
 
         <!-- System & data storage (no admin unlock required) -->
         <div class="card" style="text-align:left;">
             <h3 style="margin-bottom: 1rem;">System &amp; Data Storage</h3>
             <div id="storage-stats-container">
-                <p style="opacity:0.6; font-size:0.9rem;">Loading statistics...</p>
+                <div class="storage-grid" aria-hidden="true">
+                    <div class="storage-item"><span class="skeleton skeleton-value"></span><span class="skeleton skeleton-label"></span></div>
+                    <div class="storage-item"><span class="skeleton skeleton-value"></span><span class="skeleton skeleton-label"></span></div>
+                    <div class="storage-item"><span class="skeleton skeleton-value"></span><span class="skeleton skeleton-label"></span></div>
+                    <div class="storage-item"><span class="skeleton skeleton-value"></span><span class="skeleton skeleton-label"></span></div>
+                    <div class="storage-item"><span class="skeleton skeleton-value"></span><span class="skeleton skeleton-label"></span></div>
+                    <div class="storage-item"><span class="skeleton skeleton-value"></span><span class="skeleton skeleton-label"></span></div>
+                </div>
             </div>
             <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-color); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.5rem;">
                 <div>
