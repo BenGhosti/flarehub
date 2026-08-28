@@ -4,6 +4,7 @@ FastAPI backend with Jinja2 templates, WebAuthn/PIN auth and Cloudflare GraphQL 
 """
 import logging
 import time
+from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
@@ -707,6 +708,154 @@ async def analytics_summary(
         "bandwidth_24h_mb": round(total_bandwidth / 1_000_000, 2),
         "threats_24h": total_threats,
         "last_updated": last_updated,
+    }
+
+
+@app.get("/api/analytics/insights")
+async def analytics_insights(
+    _auth: bool = Depends(auth.get_current_session),
+    db: Session = Depends(get_db),
+):
+    """Aggregated insights from existing data (no extra Cloudflare fetches):
+    day/week deltas, cache savings per month, 12-month activity heatmap and
+    a 7-day threat briefing."""
+    now = datetime.utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    def _sum_rows(rows) -> dict:
+        return {
+            "requests": sum(r.requests_total for r in rows),
+            "bandwidth_bytes": sum(r.bandwidth_total_bytes for r in rows),
+            "threats": sum(r.threats_total for r in rows),
+        }
+
+    def _delta(cur: float, prev: float):
+        if prev <= 0:
+            return None if cur == 0 else 100.0
+        return round((cur - prev) / prev * 100, 1)
+
+    # --- Day & week deltas (raw + hourly cover the last 30 days) ---
+    day_rows = (
+        db.query(AnalyticsSnapshot).filter(AnalyticsSnapshot.timestamp >= today_start).all()
+        + db.query(AnalyticsHourly).filter(AnalyticsHourly.hour_start >= today_start).all()
+    )
+    prev_day_rows = (
+        db.query(AnalyticsSnapshot).filter(
+            AnalyticsSnapshot.timestamp >= today_start - timedelta(days=1),
+            AnalyticsSnapshot.timestamp < today_start,
+        ).all()
+        + db.query(AnalyticsHourly).filter(
+            AnalyticsHourly.hour_start >= today_start - timedelta(days=1),
+            AnalyticsHourly.hour_start < today_start,
+        ).all()
+    )
+    week_start = today_start - timedelta(days=7)
+    prev_week_start = week_start - timedelta(days=7)
+    week_rows = (
+        db.query(AnalyticsSnapshot).filter(AnalyticsSnapshot.timestamp >= week_start).all()
+        + db.query(AnalyticsHourly).filter(AnalyticsHourly.hour_start >= week_start).all()
+    )
+    prev_week_rows = (
+        db.query(AnalyticsSnapshot).filter(
+            AnalyticsSnapshot.timestamp >= prev_week_start,
+            AnalyticsSnapshot.timestamp < week_start,
+        ).all()
+        + db.query(AnalyticsHourly).filter(
+            AnalyticsHourly.hour_start >= prev_week_start,
+            AnalyticsHourly.hour_start < week_start,
+        ).all()
+    )
+
+    today = _sum_rows(day_rows)
+    yesterday = _sum_rows(prev_day_rows)
+    week = _sum_rows(week_rows)
+    prev_week = _sum_rows(prev_week_rows)
+
+    # --- Cache savings per month (last 12 months, all retention stages) ---
+    def _month_bounds(offset: int) -> tuple[datetime, datetime]:
+        y, m = now.year, now.month - offset
+        while m <= 0:
+            m += 12
+            y -= 1
+        start = datetime(y, m, 1)
+        end = datetime(y + 1, 1, 1) if m == 12 else datetime(y, m + 1, 1)
+        return start, end
+
+    savings = []
+    for i in range(11, -1, -1):
+        ms, me = _month_bounds(i)
+        daily = db.query(AnalyticsDaily).filter(AnalyticsDaily.day >= ms, AnalyticsDaily.day < me).all()
+        hourly = db.query(AnalyticsHourly).filter(AnalyticsHourly.hour_start >= ms, AnalyticsHourly.hour_start < me).all()
+        raw = db.query(AnalyticsSnapshot).filter(AnalyticsSnapshot.timestamp >= ms, AnalyticsSnapshot.timestamp < me).all()
+        saved_req = (
+            sum(r.requests_cached for r in daily)
+            + sum(r.requests_cached for r in hourly)
+            + sum(r.requests_cached for r in raw)
+        )
+        saved_bw = (
+            sum(r.bandwidth_cached_bytes for r in daily)
+            + sum(r.bandwidth_cached_bytes for r in hourly)
+            + sum(r.bandwidth_cached_bytes for r in raw)
+        )
+        savings.append({
+            "month": ms.strftime("%Y-%m"),
+            "requests_saved": saved_req,
+            "bytes_saved_mb": round(saved_bw / 1_000_000, 1),
+        })
+
+    # --- 12-month activity heatmap (per day, all retention stages) ---
+    heat_start = today_start - timedelta(days=364)
+    daily_by_day: dict = {}
+    for r in db.query(AnalyticsDaily).filter(AnalyticsDaily.day >= heat_start).all():
+        d = r.day.date()
+        daily_by_day[d] = daily_by_day.get(d, 0) + r.requests_total
+    for r in db.query(AnalyticsHourly).filter(AnalyticsHourly.hour_start >= heat_start).all():
+        d = r.hour_start.date()
+        daily_by_day[d] = daily_by_day.get(d, 0) + r.requests_total
+    for r in db.query(AnalyticsSnapshot).filter(AnalyticsSnapshot.timestamp >= heat_start).all():
+        d = r.timestamp.date()
+        daily_by_day[d] = daily_by_day.get(d, 0) + r.requests_total
+    heatmap = [
+        {
+            "date": (heat_start + timedelta(days=i)).strftime("%Y-%m-%d"),
+            "requests": daily_by_day.get((heat_start + timedelta(days=i)).date(), 0),
+        }
+        for i in range(365)
+    ]
+
+    # --- Threat briefing (last 7 days from the security feed) ---
+    threat_start = now - timedelta(days=7)
+    events = db.query(ThreatEvent).filter(ThreatEvent.timestamp >= threat_start).all()
+    attacks_today = sum(1 for e in events if e.timestamp >= today_start)
+    attacks_yesterday = sum(
+        1 for e in events
+        if today_start - timedelta(days=1) <= e.timestamp < today_start
+    )
+    ips = Counter((e.client_ip or "") for e in events)
+    uas = Counter((e.user_agent or "") for e in events)
+    paths = Counter((e.path or "") for e in events)
+
+    return {
+        "day_deltas": {
+            "requests": _delta(today["requests"], yesterday["requests"]),
+            "bandwidth": _delta(today["bandwidth_bytes"], yesterday["bandwidth_bytes"]),
+            "threats": _delta(today["threats"], yesterday["threats"]),
+        },
+        "week_deltas": {
+            "requests": _delta(week["requests"], prev_week["requests"]),
+            "threats": _delta(week["threats"], prev_week["threats"]),
+        },
+        "cache_savings": savings,
+        "heatmap": heatmap,
+        "threat_briefing": {
+            "total_7d": len(events),
+            "attacks_today": attacks_today,
+            "attacks_yesterday": attacks_yesterday,
+            "trend_pct": _delta(attacks_today, attacks_yesterday),
+            "top_ips": [{"ip": collector.mask_ip(ip), "count": c} for ip, c in ips.most_common(5) if ip],
+            "top_uas": [{"ua": ua, "count": c} for ua, c in uas.most_common(5) if ua],
+            "top_paths": [{"path": path, "count": c} for path, c in paths.most_common(5) if path],
+        },
     }
 
 

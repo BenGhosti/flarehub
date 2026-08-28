@@ -355,6 +355,118 @@ input:checked + .slider:before { transform: translateX(20px); }
     .chart-row { grid-template-columns: 1fr; }
 }
 
+/* ---------- Insights (deltas, cache savings, heatmap, threat briefing) ---------- */
+.summary-delta {
+    font-size: 0.72rem;
+    font-weight: 600;
+    min-height: 1.1em;
+}
+.summary-delta.up { color: #4caf50; }
+.summary-delta.down { color: var(--danger-color); }
+
+.peak-label {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--danger-color);
+    opacity: 0.9;
+    margin-left: 0.5rem;
+}
+.kpi-line {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    color: var(--highlight-color);
+}
+
+.heatmap-container {
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(7, 10px);
+    gap: 2px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    min-height: 84px;
+}
+.heatmap-day {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    background: var(--progress-bg);
+}
+
+.briefing-stats {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+.briefing-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.briefing-value {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--highlight-color);
+}
+.briefing-label {
+    font-size: 0.72rem;
+    opacity: 0.65;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.briefing-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 1rem;
+}
+.briefing-columns h4 {
+    font-size: 0.8rem;
+    margin-bottom: 0.5rem;
+    opacity: 0.75;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.briefing-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 3px 0;
+    font-size: 0.82rem;
+}
+.briefing-rank {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    background: var(--progress-bg);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 700;
+    opacity: 0.8;
+    flex-shrink: 0;
+}
+.briefing-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.briefing-count {
+    font-weight: 600;
+    opacity: 0.85;
+}
+.briefing-empty {
+    opacity: 0.5;
+    font-size: 0.8rem;
+}
+@media (max-width: 640px) {
+    .briefing-columns { grid-template-columns: 1fr; }
+}
+
 /* ============================================================
    App shell: fixed top navigation + sidebar (desktop)
    ============================================================ */

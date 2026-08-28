@@ -42,6 +42,7 @@
             <div class="card summary-card">
                 <span class="summary-label">Requests (24h)</span>
                 <span class="summary-value" id="stat-requests">–</span>
+                <span class="summary-delta" id="delta-requests"></span>
             </div>
             <div class="card summary-card">
                 <span class="summary-label">Cache Ratio</span>
@@ -50,10 +51,31 @@
             <div class="card summary-card">
                 <span class="summary-label">Bandwidth (24h)</span>
                 <span class="summary-value" id="stat-bandwidth">–</span>
+                <span class="summary-delta" id="delta-bandwidth"></span>
             </div>
             <div class="card summary-card">
                 <span class="summary-label">Threats (24h)</span>
                 <span class="summary-value" id="stat-threats">–</span>
+                <span class="summary-delta" id="delta-threats"></span>
+            </div>
+        </div>
+
+        <div class="chart-row">
+            <div class="card chart-card chart-card-half" style="text-align:left;">
+                <h3 class="card-title">Cache Savings (12 months)</h3>
+                <p class="kpi-line" id="cache-savings-kpi">–</p>
+                <div class="chart-wrap">
+                    <div class="skeleton chart-loading" id="chart-cache-savings-loading"></div>
+                    <canvas id="chart-cache-savings"></canvas>
+                </div>
+                <p class="chart-empty" id="chart-cache-savings-empty" style="display:none;">No data for this period</p>
+            </div>
+            <div class="card chart-card chart-card-half" style="text-align:left;">
+                <h3 class="card-title">Activity (12 months)</h3>
+                <div id="heatmap-container" class="heatmap-container">
+                    <div class="skeleton skeleton-list"></div>
+                </div>
+                <p class="chart-empty" id="heatmap-empty" style="display:none;">No data for this period</p>
             </div>
         </div>
 
@@ -118,7 +140,7 @@
 
         {% if feature_requests_chart %}
         <div class="card chart-card" style="text-align:left;">
-            <h3 class="card-title">Requests</h3>
+            <h3 class="card-title">Requests <span class="peak-label" id="requests-peak"></span></h3>
             <div class="chart-wrap">
                 <div class="skeleton chart-loading" id="chart-requests-loading"></div>
                 <canvas id="chart-requests"></canvas>
@@ -277,6 +299,13 @@
             </div>
         </div>
         {% endif %}
+
+        <div class="card" style="text-align:left;">
+            <h3 class="card-title">Threat Briefing (7 days)</h3>
+            <div id="threat-briefing-container">
+                <div class="skeleton skeleton-list"></div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -337,6 +366,117 @@
             document.getElementById('stat-bandwidth').textContent = fmtNumber(data.bandwidth_24h_mb) + ' MB';
             document.getElementById('stat-threats').textContent = fmtNumber(data.threats_24h);
             document.getElementById('live-text').textContent = fmtRelativeTime(data.last_updated);
+        }
+
+        function setDelta(id, pct, invert = false) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (pct === null || pct === undefined || isNaN(pct)) {
+                el.textContent = '';
+                el.className = 'summary-delta';
+                return;
+            }
+            const up = pct >= 0;
+            const good = invert ? !up : up;
+            el.textContent = (up ? '▲ ' : '▼ ') + Math.abs(pct).toFixed(1) + '% vs. yesterday';
+            el.className = 'summary-delta ' + (good ? 'up' : 'down');
+        }
+
+        let chartSavings;
+
+        function renderCacheSavings(months) {
+            const canvas = document.getElementById('chart-cache-savings');
+            const kpi = document.getElementById('cache-savings-kpi');
+            if (!canvas) return;
+            const hasData = months.some(m => m.bytes_saved_mb > 0);
+            toggleEmpty('chart-cache-savings', !hasData);
+            if (kpi) {
+                const totalMb = Math.round(months.reduce((a, m) => a + m.bytes_saved_mb, 0));
+                const totalReq = months.reduce((a, m) => a + m.requests_saved, 0);
+                kpi.textContent = hasData
+                    ? `≈ ${fmtNumber(totalMb)} MB bandwidth and ${fmtNumber(totalReq)} requests saved by caching (12 months)`
+                    : '–';
+            }
+            if (chartSavings) chartSavings.destroy();
+            if (!hasData) return;
+            chartSavings = new Chart(canvas, {
+                type: 'bar',
+                data: {
+                    labels: months.map(m => m.month.slice(2)),
+                    datasets: [{
+                        label: 'Bandwidth saved (MB)',
+                        data: months.map(m => m.bytes_saved_mb),
+                        backgroundColor: 'rgba(76,175,80,0.6)'
+                    }]
+                },
+                options: chartOptions()
+            });
+        }
+
+        function renderHeatmap(days) {
+            const container = document.getElementById('heatmap-container');
+            const empty = document.getElementById('heatmap-empty');
+            if (!container) return;
+            const max = Math.max.apply(null, days.map(d => d.requests));
+            if (max <= 0) {
+                container.style.display = 'none';
+                if (empty) empty.style.display = 'block';
+                return;
+            }
+            container.style.display = '';
+            if (empty) empty.style.display = 'none';
+            container.innerHTML = '';
+            days.forEach(d => {
+                const cell = document.createElement('div');
+                cell.className = 'heatmap-day';
+                const ratio = Math.sqrt(d.requests / max);
+                cell.style.backgroundColor = 'rgba(255,94,31,' + (0.08 + ratio * 0.87).toFixed(2) + ')';
+                cell.title = d.date + ': ' + fmtNumber(d.requests) + ' requests';
+                cell.setAttribute('aria-label', cell.title);
+                container.appendChild(cell);
+            });
+        }
+
+        function renderThreatBriefing(b) {
+            const container = document.getElementById('threat-briefing-container');
+            if (!container) return;
+            if (!b || !b.total_7d) {
+                container.innerHTML = '<p class="chart-empty" style="padding:1rem 0;">No threats in the last 7 days</p>';
+                return;
+            }
+            const trend = (b.trend_pct === null || b.trend_pct === undefined)
+                ? 'no comparison'
+                : (b.trend_pct >= 0 ? '▲ +' + b.trend_pct.toFixed(0) + '%' : '▼ ' + b.trend_pct.toFixed(0) + '%');
+            const list = (items, key) => (items && items.length
+                ? items.map((it, i) =>
+                    `<div class="briefing-row"><span class="briefing-rank">${i + 1}</span>` +
+                    `<span class="briefing-name" title="${esc(it[key])}">${esc(it[key])}</span>` +
+                    `<span class="briefing-count">${fmtNumber(it.count)}</span></div>`
+                  ).join('')
+                : '<p class="briefing-empty">–</p>');
+            container.innerHTML =
+                '<div class="briefing-stats">' +
+                    `<div class="briefing-stat"><span class="briefing-value">${fmtNumber(b.total_7d)}</span><span class="briefing-label">Events (7 days)</span></div>` +
+                    `<div class="briefing-stat"><span class="briefing-value">${fmtNumber(b.attacks_today)}</span><span class="briefing-label">Today</span></div>` +
+                    `<div class="briefing-stat"><span class="briefing-value">${esc(trend)}</span><span class="briefing-label">vs. yesterday</span></div>` +
+                '</div>' +
+                '<div class="briefing-columns">' +
+                    '<div><h4>Top IPs</h4>' + list(b.top_ips, 'ip') + '</div>' +
+                    '<div><h4>Top paths</h4>' + list(b.top_paths, 'path') + '</div>' +
+                    '<div><h4>Top user agents</h4>' + list(b.top_uas, 'ua') + '</div>' +
+                '</div>';
+        }
+
+        async function loadInsights() {
+            const res = await authFetch('/api/analytics/insights');
+            if (!res.ok) return;
+            const data = await res.json();
+            setDelta('delta-requests', data.day_deltas.requests);
+            setDelta('delta-bandwidth', data.day_deltas.bandwidth);
+            setDelta('delta-threats', data.day_deltas.threats, true);
+            renderCacheSavings(data.cache_savings || []);
+            renderHeatmap(data.heatmap || []);
+            renderThreatBriefing(data.threat_briefing);
         }
 
         async function loadCollectorStatus() {
@@ -409,12 +549,29 @@
                 toggleEmpty('chart-requests', !hasData);
                 if (chartRequests) chartRequests.destroy();
                 if (hasData) {
+                    // Peak detection: highlight the highest point and show a summary line
+                    let peakIdx = 0;
+                    for (let i = 1; i < data.requests_total.length; i++) {
+                        if (data.requests_total[i] > data.requests_total[peakIdx]) peakIdx = i;
+                    }
+                    const peakVal = data.requests_total[peakIdx];
+                    const avg = data.requests_total.reduce((a, b) => a + b, 0) / data.requests_total.length;
+                    const peakEl = document.getElementById('requests-peak');
+                    if (peakEl) {
+                        if (avg > 0) {
+                            peakEl.textContent = `Peak: ${data.labels[peakIdx]} · ${fmtNumber(peakVal)} req (${(peakVal / avg).toFixed(1)}x avg)`;
+                            peakEl.style.display = '';
+                        } else {
+                            peakEl.style.display = 'none';
+                        }
+                    }
+                    const pointRadius = data.requests_total.map((v, i) => (i === peakIdx ? 5 : 0));
                     chartRequests = new Chart(reqCanvas, {
                         type: 'line',
                         data: {
                             labels: data.labels,
                             datasets: [
-                                { label: 'Total', data: data.requests_total, borderColor: chartColors.primary, backgroundColor: 'rgba(255,94,31,0.1)', fill: true, tension: 0.3, pointRadius: 0 },
+                                { label: 'Total', data: data.requests_total, borderColor: chartColors.primary, backgroundColor: 'rgba(255,94,31,0.1)', fill: true, tension: 0.3, pointRadius, pointBackgroundColor: chartColors.danger, pointBorderColor: '#fff', pointBorderWidth: 1 },
                                 { label: 'Cached', data: data.requests_cached, borderColor: chartColors.secondary, tension: 0.3, pointRadius: 0 }
                             ]
                         },
@@ -776,7 +933,7 @@
         }
 
         async function refreshAll() {
-            await Promise.all([loadSummary(), loadTimeseries(), loadDonuts(), loadPassiveAnalytics(), loadSecurityFeed(), loadZoneStatus(), loadCollectorStatus(), loadZoneCheck()]);
+            await Promise.all([loadSummary(), loadInsights(), loadTimeseries(), loadDonuts(), loadPassiveAnalytics(), loadSecurityFeed(), loadZoneStatus(), loadCollectorStatus(), loadZoneCheck()]);
         }
 
         refreshAll();
