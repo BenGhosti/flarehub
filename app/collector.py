@@ -167,6 +167,30 @@ async def _graphql_request(query: str, variables: dict) -> tuple[dict | None, st
     return data, None
 
 
+async def verify_zone_access() -> dict:
+    """Validates token + zone via the same GraphQL query the collector uses (read-only).
+    Returns {"configured": bool, "ok": bool, "error": str | None}.
+
+    Using the analytics query keeps the check aligned with what the collector actually
+    does – the error message is identical to the one shown in the dashboard banner."""
+    ok, cfg_error = _zone_configured()
+    if not ok:
+        return {"configured": False, "ok": False, "error": cfg_error}
+
+    until = datetime.now(timezone.utc)
+    since = until - timedelta(hours=1)
+
+    data, error = await _graphql_request(ANALYTICS_QUERY, {
+        "zoneTag": settings.CLOUDFLARE_ZONE_ID,
+        "since": since.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "until": until.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "limit": 1,
+    })
+    if error:
+        return {"configured": True, "ok": False, "error": error}
+    return {"configured": True, "ok": True, "error": None}
+
+
 async def fetch_analytics_and_store():
     """Called periodically (COLLECTOR_INTERVAL_MINUTES) by the scheduler."""
     start_ts = time.monotonic()

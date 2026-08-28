@@ -67,6 +67,11 @@
             <p id="collector-error-text"></p>
         </div>
 
+        <div class="card banner banner-warning" id="zone-error-banner" style="display:none;">
+            <strong>⚠️ Cloudflare zone / token problem</strong>
+            <p id="zone-error-text"></p>
+        </div>
+
         <!-- Summary Cards -->
         <div class="summary-grid">
             <div class="card summary-card">
@@ -339,6 +344,20 @@
             const text = document.getElementById('collector-error-text');
             if (data.last_run && !data.last_run.success) {
                 text.textContent = data.last_run.message || 'Unknown error';
+                banner.style.display = 'block';
+            } else {
+                banner.style.display = 'none';
+            }
+        }
+
+        async function loadZoneCheck() {
+            const res = await authFetch('/api/zone/verify');
+            if (!res.ok) return;
+            const data = await res.json();
+            const banner = document.getElementById('zone-error-banner');
+            const text = document.getElementById('zone-error-text');
+            if (data.configured && !data.ok) {
+                text.textContent = data.error || 'Unknown error';
                 banner.style.display = 'block';
             } else {
                 banner.style.display = 'none';
@@ -745,7 +764,7 @@
         });
 
         async function refreshAll() {
-            await Promise.all([loadSummary(), loadTimeseries(), loadDonuts(), loadPassiveAnalytics(), loadSecurityFeed(), loadZoneStatus(), loadCollectorStatus()]);
+            await Promise.all([loadSummary(), loadTimeseries(), loadDonuts(), loadPassiveAnalytics(), loadSecurityFeed(), loadZoneStatus(), loadCollectorStatus(), loadZoneCheck()]);
         }
 
         refreshAll();

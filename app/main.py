@@ -46,6 +46,21 @@ async def lifespan(_app: FastAPI):
     if settings.SESSION_SECRET_KEY == "change-me-to-a-long-random-string":
         logger.warning("SESSION_SECRET_KEY is still the default value – please set a random string in the .env!")
 
+    # Zone/token diagnostic check at startup (non-fatal, read-only).
+    zone_check = await collector.verify_zone_access()
+    if not zone_check["configured"]:
+        logger.warning(
+            "Cloudflare not configured (CLOUDFLARE_API_TOKEN / CLOUDFLARE_ZONE_ID) – "
+            "the collector will skip runs until they are set in the .env"
+        )
+    elif not zone_check["ok"]:
+        logger.error(
+            f"Cloudflare zone/token check FAILED: {zone_check['error']} – "
+            f"fix CLOUDFLARE_ZONE_ID / CLOUDFLARE_API_TOKEN in the .env"
+        )
+    else:
+        logger.info(f"Cloudflare zone/token check OK (zone {settings.CLOUDFLARE_ZONE_ID})")
+
     scheduler.add_job(
         collector.fetch_analytics_and_store,
         "interval",
@@ -769,6 +784,14 @@ async def zone_status(_auth: bool = Depends(auth.get_current_session)):
         "development_mode": dev_mode == "on",
         "under_attack_mode": security_level == "under_attack",
     }
+
+
+@app.get("/api/zone/verify")
+async def zone_verify(_auth: bool = Depends(auth.get_current_session)):
+    """Read-only diagnostic: validates the configured token+zone via the same GraphQL
+    query the collector uses. Returns a clear, human-readable error message on failure –
+    useful for debugging (e.g. 'Zone not found' / 403 / 401)."""
+    return await collector.verify_zone_access()
 
 
 @app.post("/api/zone/dev-mode")
