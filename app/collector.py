@@ -61,7 +61,8 @@ query GetZoneAnalytics($zoneTag: string, $since: Time, $until: Time, $limit: Int
 
 # Hourly fallback dataset - available on ALL plans. Used automatically when the
 # zone has no access to httpRequests1mGroups (higher-plan dataset, error:
-# "does not have access to the path").
+# "does not have access to the path"). Both nodes return the same
+# httpRequestsGroup type, so the arguments mirror ANALYTICS_QUERY_1M exactly.
 ANALYTICS_QUERY_1H = """
 query GetZoneAnalyticsHourly($zoneTag: string, $since: Time, $until: Time, $limit: Int) {
   viewer {
@@ -69,9 +70,9 @@ query GetZoneAnalyticsHourly($zoneTag: string, $since: Time, $until: Time, $limi
       httpRequests1hGroups(
         limit: $limit
         filter: { datetime_geq: $since, datetime_leq: $until }
-        orderBy: [datetimeHour_ASC]
+        orderBy: [datetime_ASC]
       ) {
-        dimensions { datetimeHour }
+        dimensions { datetime }
         sum {
           requests
           cachedRequests
