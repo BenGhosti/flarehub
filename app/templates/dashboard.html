@@ -722,7 +722,8 @@
             if (!el) return;
             el.textContent = msg;
             el.style.color = isError ? 'var(--danger-color)' : 'var(--highlight-color)';
-            setTimeout(() => { el.textContent = ''; }, 4000);
+            // Errors stay visible until the next action, so nothing gets missed.
+            if (!isError) setTimeout(() => { el.textContent = ''; }, 4000);
         }
 
         document.getElementById('toggle-dev-mode')?.addEventListener('change', async (e) => {
@@ -732,7 +733,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ enabled: e.target.checked })
                 });
-                if (!res.ok) throw new Error((await res.json()).detail);
+                if (!res.ok) throw new Error(await extractError(res));
                 showFeedback('Development Mode updated');
             } catch (err) {
                 showFeedback('Error: ' + err.message, true);
@@ -747,7 +748,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ enabled: e.target.checked })
                 });
-                if (!res.ok) throw new Error((await res.json()).detail);
+                if (!res.ok) throw new Error(await extractError(res));
                 showFeedback('Under Attack Mode updated');
             } catch (err) {
                 showFeedback('Error: ' + err.message, true);
@@ -759,7 +760,7 @@
             e.target.disabled = true;
             try {
                 const res = await authFetch('/api/zone/purge-cache', { method: 'POST' });
-                if (!res.ok) throw new Error((await res.json()).detail);
+                if (!res.ok) throw new Error(await extractError(res));
                 showFeedback('Cache purged successfully');
             } catch (err) {
                 showFeedback('Error: ' + err.message, true);
@@ -767,6 +768,12 @@
                 e.target.disabled = false;
             }
         });
+
+        async function extractError(res) {
+            let detail = 'HTTP ' + res.status;
+            try { detail = (await res.json()).detail || detail; } catch (_) {}
+            return detail;
+        }
 
         async function refreshAll() {
             await Promise.all([loadSummary(), loadTimeseries(), loadDonuts(), loadPassiveAnalytics(), loadSecurityFeed(), loadZoneStatus(), loadCollectorStatus(), loadZoneCheck()]);

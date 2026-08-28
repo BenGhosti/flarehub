@@ -50,6 +50,7 @@ function clearAuth() {
 
 // Fetch wrapper: attaches Authorization, admin-grant and reveal-IPs headers and
 // redirects to the login page automatically when the token has expired.
+// All requests get a hard timeout (default 30 s) so buttons/UI can never hang forever.
 async function authFetch(url, options = {}) {
     const opts = Object.assign({}, options);
     opts.headers = Object.assign({}, options.headers || {});
@@ -59,15 +60,27 @@ async function authFetch(url, options = {}) {
     if (grant) opts.headers['X-Admin-Grant'] = grant;
     if (getRevealIps()) opts.headers['X-Reveal-IPs'] = '1';
 
-    const res = await fetch(url, opts);
+    const timeoutMs = options.timeoutMs || 30000;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const res = await fetch(url, Object.assign(opts, { signal: controller.signal }));
 
-    const path = new URL(url, window.location.origin).pathname;
-    if (res.status === 401 && token && !LOGIN_FLOW_ENDPOINTS.includes(path)) {
-        clearAuth();
-        window.location.href = '/login';
-        throw new Error('Not authenticated');
+        const path = new URL(url, window.location.origin).pathname;
+        if (res.status === 401 && token && !LOGIN_FLOW_ENDPOINTS.includes(path)) {
+            clearAuth();
+            window.location.href = '/login';
+            throw new Error('Not authenticated');
+        }
+        return res;
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            throw new Error('Request timed out after ' + Math.round(timeoutMs / 1000) + 's');
+        }
+        throw err;
+    } finally {
+        clearTimeout(timer);
     }
-    return res;
 }
 
 function logout() {

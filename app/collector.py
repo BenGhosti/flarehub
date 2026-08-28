@@ -691,16 +691,20 @@ async def set_zone_setting(setting_name: str, value: str) -> tuple[bool, str]:
     if resp.status_code == 429:
         return False, "Cloudflare rate limit reached (429), please wait a moment"
     if resp.status_code == 403:
-        return False, "Access denied (403) – check the 'Zone Settings: Edit' token permission"
+        return False, "Access denied (403) – the token is missing the 'Zone Settings' permission for this zone"
 
     try:
         data = resp.json()
     except ValueError:
+        logger.error(f"Zone setting '{setting_name}' returned invalid JSON (HTTP {resp.status_code})")
         return False, f"Invalid response (HTTP {resp.status_code})"
 
     if not data.get("success"):
         errors = data.get("errors") or [{"message": f"HTTP {resp.status_code}"}]
-        return False, "; ".join(e.get("message", str(e)) for e in errors)
+        msg = "; ".join(e.get("message", str(e)) for e in errors)
+        logger.error(f"Zone setting '{setting_name}' failed (HTTP {resp.status_code}): {msg}")
+        return False, msg
+    logger.info(f"Zone setting '{setting_name}' updated (HTTP {resp.status_code})")
     return True, "OK"
 
 
@@ -773,17 +777,22 @@ async def purge_cache(purge_everything: bool = True, files: list[str] = None) ->
     if resp.status_code == 429:
         return False, "Cloudflare rate limit reached (429), please wait a moment"
     if resp.status_code == 403:
-        return False, "Access denied (403) – check the 'Cache Purge: Edit' token permission"
+        return False, "Access denied (403) – the token is missing the 'Cache Purge' permission for this zone"
 
     try:
         data = resp.json()
     except ValueError:
+        logger.error(f"Cache purge returned invalid JSON (HTTP {resp.status_code})")
         return False, f"Invalid response (HTTP {resp.status_code})"
 
     if not data.get("success"):
         errors = data.get("errors") or [{"message": f"HTTP {resp.status_code}"}]
-        return False, "; ".join(e.get("message", str(e)) for e in errors)
+        msg = "; ".join(e.get("message", str(e)) for e in errors)
+        logger.error(f"Cache purge failed (HTTP {resp.status_code}): {msg}")
+        return False, msg
 
+    purge_id = (data.get("result") or {}).get("id", "")
+    logger.info(f"Cache purge executed (HTTP {resp.status_code}, purge id: {purge_id})")
     if settings.NOTIFY_ON_CACHE_PURGE:
         await send_webhook_notification("🧹 Cache has been purged (FlareHub quick action)")
     return True, "OK"

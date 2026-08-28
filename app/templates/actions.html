@@ -116,7 +116,13 @@
             if (!el) return;
             el.textContent = msg;
             el.style.color = isError ? 'var(--danger-color)' : 'var(--highlight-color)';
-            setTimeout(() => { el.textContent = ''; }, 5000);
+            if (!isError) setTimeout(() => { el.textContent = ''; }, 4000);
+        }
+
+        async function extractError(res) {
+            let detail = 'HTTP ' + res.status;
+            try { detail = (await res.json()).detail || detail; } catch (_) {}
+            return detail;
         }
 
         // --- Cache ---
@@ -124,7 +130,7 @@
             e.target.disabled = true;
             try {
                 const res = await authFetch('/api/zone/purge-cache', { method: 'POST' });
-                if (!res.ok) throw new Error((await res.json()).detail);
+                if (!res.ok) throw new Error(await extractError(res));
                 showFeedback('cache-feedback', 'Entire cache purged successfully');
             } catch (err) {
                 showFeedback('cache-feedback', 'Error: ' + err.message, true);
@@ -144,7 +150,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ urls })
                 });
-                if (!res.ok) throw new Error((await res.json()).detail);
+                if (!res.ok) throw new Error(await extractError(res));
                 showFeedback('cache-feedback', `${urls.length} URL(s) purged from the cache`);
                 document.getElementById('purge-urls').value = '';
             } catch (err) {
