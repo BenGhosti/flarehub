@@ -96,48 +96,6 @@
         </div>
     </div>
 
-    <style>
-        .top-bar {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            margin-bottom: 1.75rem;
-            flex-wrap: wrap;
-            gap: 0.75rem;
-        }
-        .top-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-        .btn-ghost {
-            background: var(--secondary-color);
-            color: var(--text-color);
-            padding: 8px 16px;
-            font-size: 0.85rem;
-        }
-        .btn-small { padding: 6px 14px; font-size: 0.82rem; }
-        .card {
-            background: var(--container-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            padding: 1.25rem 1.5rem;
-            margin-bottom: 1.25rem;
-        }
-        .card-title { margin-bottom: 0.75rem; font-size: 1rem; font-weight: 600; }
-        .action-desc { font-size: 0.8rem; opacity: 0.65; margin-top: 2px; }
-        .banner { border-left: 4px solid var(--danger-color); }
-        .banner p { font-size: 0.85rem; margin-top: 4px; opacity: 0.8; }
-        .feedback-text { font-size: 0.8rem; margin-top: 0.75rem; min-height: 1.2em; }
-        .zone-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-        .zone-table td { padding: 8px 10px; border-bottom: 1px solid var(--border-color); }
-        .zone-table tr:last-child td { border-bottom: none; }
-        .zone-table td:first-child { opacity: 0.7; width: 45%; }
-        .zone-badge {
-            display: inline-block; padding: 2px 8px; border-radius: 4px;
-            font-size: 0.72rem; font-weight: 600;
-            background: rgba(128,128,128,0.18); color: var(--text-color);
-        }
-        .zone-badge.on { background: rgba(76,175,80,0.18); color: #4caf50; }
-        .zone-badge.off { background: rgba(244,67,54,0.18); color: #f44336; }
-    </style>
-
     <script>
         // --- Theme (localStorage + Server-Default) ---
         const savedTheme = localStorage.getItem('theme') || '{{ default_theme }}';

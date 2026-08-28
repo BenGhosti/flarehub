@@ -10,6 +10,8 @@
     --secondary-color: #ccc;
     --textarea-bg: rgba(255, 255, 255, 0.1);
     --danger-color: #f44336;
+    --card-gap: 1.75rem;          /* vertikaler Abstand zwischen Cards/Sektionen */
+    --card-gap-inner: 1.5rem;     /* Abstand zwischen Cards innerhalb von Grids */
 }
 
 [data-theme="dark"] {
@@ -191,4 +193,152 @@ input:focus-visible {
         height: 2.75rem;
         font-size: 1.125rem;
     }
+}
+
+/* ============================================================
+   Shared Layout (Dashboard, Actions, Settings, Admin)
+   Vertikales Spacing zentral über --card-gap steuerbar.
+   ============================================================ */
+
+/* ---------- Top-Bar / Header ---------- */
+.top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--card-gap);
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+.brand-row { display: flex; align-items: center; gap: 0.6rem; }
+.brand-row h1 { font-size: 1.7rem; text-align: left; margin: 0; }
+.brand-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--highlight-color);
+    box-shadow: 0 0 8px var(--highlight-color);
+}
+.top-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.live-indicator {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.75rem; opacity: 0.65; margin-right: 0.25rem;
+}
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: #4caf50; }
+
+/* ---------- Buttons ---------- */
+.btn-ghost {
+    background: var(--secondary-color);
+    color: var(--text-color);
+    padding: 8px 16px;
+    font-size: 0.85rem;
+}
+.btn-small { padding: 6px 14px; font-size: 0.82rem; }
+
+/* ---------- Cards ---------- */
+.card {
+    background: var(--container-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: var(--card-gap);
+}
+.card-title { margin-bottom: 1.25rem; font-size: 1rem; font-weight: 600; }
+.banner { text-align: left; border-left: 4px solid var(--border-color); }
+.banner p { font-size: 0.85rem; margin-top: 4px; opacity: 0.8; }
+.banner-danger { border-left-color: var(--danger-color); }
+.banner-warning { border-left-color: #f0a020; }
+.feedback-text { font-size: 0.8rem; margin-top: 0.75rem; min-height: 1.2em; }
+
+/* ---------- Summary Cards ---------- */
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1.25rem;
+    margin-bottom: var(--card-gap);
+}
+.summary-card { display: flex; flex-direction: column; gap: 4px; }
+.summary-label { font-size: 0.75rem; opacity: 0.65; text-transform: uppercase; letter-spacing: 0.03em; }
+.summary-value { font-size: 1.5rem; font-weight: 700; color: var(--highlight-color); }
+
+/* ---------- Quick Actions ---------- */
+.actions-grid { display: flex; flex-direction: column; gap: 1.25rem; }
+.action-item { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.action-title { display: block; font-size: 0.92rem; }
+.action-desc { display: block; font-size: 0.75rem; opacity: 0.6; margin-top: 2px; }
+.switch { position: relative; display: inline-block; width: 44px; height: 24px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--secondary-color); transition: .3s; border-radius: 24px; }
+.slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%; }
+input:checked + .slider { background-color: var(--highlight-color); }
+input:checked + .slider:before { transform: translateX(20px); }
+
+/* ---------- Zeitraum-Auswahl ---------- */
+.range-selector { display: flex; gap: 0.5rem; margin-bottom: var(--card-gap); flex-wrap: wrap; }
+.range-btn {
+    background: var(--container-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    border-radius: 6px;
+}
+.range-btn:hover:not(:disabled) { background: var(--secondary-color); transform: none; }
+.range-btn.active { background: var(--highlight-color); border-color: var(--highlight-color); color: white; }
+
+/* ---------- Chart-Layout ---------- */
+.chart-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--card-gap-inner);
+    margin-bottom: var(--card-gap);
+}
+.chart-card-half { margin-bottom: 0; }
+.chart-wrap { position: relative; height: 220px; }
+.chart-empty { text-align: center; opacity: 0.5; font-size: 0.85rem; padding: 2rem 0; }
+
+/* ---------- Tabellen / Badges ---------- */
+.feed-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.feed-table th, .feed-table td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border-color); }
+.feed-table th { opacity: 0.65; font-weight: 600; text-transform: uppercase; font-size: 0.7rem; }
+.feed-empty { opacity: 0.6; text-align: center; padding: 1.5rem 0 !important; }
+.action-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+}
+.action-badge.block { background: rgba(244,67,54,0.18); color: #f44336; }
+.action-badge.challenge, .action-badge.jschallenge { background: rgba(240,160,32,0.18); color: #f0a020; }
+.action-badge.default { background: rgba(128,128,128,0.18); color: #999; }
+
+/* ---------- Settings: Storage-Statistik ---------- */
+.storage-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 0.875rem;
+}
+.storage-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 0.75rem;
+    background: var(--bg-color);
+    border-radius: 8px;
+    text-align: center;
+}
+.storage-value { font-size: 1.4rem; font-weight: 700; color: var(--highlight-color); }
+.storage-label { font-size: 0.72rem; opacity: 0.65; line-height: 1.3; }
+
+/* ---------- Action Center: Zone-Status ---------- */
+.zone-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.zone-table td { padding: 8px 10px; border-bottom: 1px solid var(--border-color); }
+.zone-table tr:last-child td { border-bottom: none; }
+.zone-table td:first-child { opacity: 0.7; width: 45%; }
+.zone-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 0.72rem; font-weight: 600;
+    background: rgba(128,128,128,0.18); color: var(--text-color);
+}
+.zone-badge.on { background: rgba(76,175,80,0.18); color: #4caf50; }
+.zone-badge.off { background: rgba(244,67,54,0.18); color: #f44336; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 640px) {
+    .chart-row { grid-template-columns: 1fr; }
 }
