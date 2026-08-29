@@ -304,7 +304,7 @@ input:checked + .slider:before { transform: translateX(20px); }
 }
 .chart-card-half { margin-bottom: 0; }
 .chart-wrap { position: relative; height: 220px; }
-.chart-empty { text-align: center; opacity: 0.5; font-size: 0.85rem; padding: 2rem 0; }
+.chart-empty { text-align: center; opacity: 0.5; font-size: 0.85rem; padding: 3rem 0; }
 
 /* ---------- Tabellen / Badges ---------- */
 .feed-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }

@@ -23,18 +23,18 @@
 
         {% if not zone_configured %}
         <div class="card banner banner-danger">
-            <strong>âš ï¸ Cloudflare not configured</strong>
+            <strong>⚠️ Cloudflare not configured</strong>
             <p>Please set <code>CLOUDFLARE_API_TOKEN</code> and <code>CLOUDFLARE_ZONE_ID</code> in the .env so that analytics data can be fetched.</p>
         </div>
         {% endif %}
 
         <div class="card banner banner-warning" id="collector-error-banner" style="display:none;">
-            <strong>âš ï¸ Last collector run failed</strong>
+            <strong>⚠️ Last collector run failed</strong>
             <p id="collector-error-text"></p>
         </div>
 
         <div class="card banner banner-warning" id="zone-error-banner" style="display:none;">
-            <strong>âš ï¸ Cloudflare zone / token problem</strong>
+            <strong>⚠️ Cloudflare zone / token problem</strong>
             <p id="zone-error-text"></p>
         </div>
 
@@ -42,21 +42,21 @@
         <div class="summary-grid">
             <div class="card summary-card">
                 <span class="summary-label">Requests (24h)</span>
-                <span class="summary-value" id="stat-requests">â€“</span>
+                <span class="summary-value" id="stat-requests">–</span>
                 <span class="summary-delta" id="delta-requests"></span>
             </div>
             <div class="card summary-card">
                 <span class="summary-label">Cache Ratio</span>
-                <span class="summary-value" id="stat-cache-ratio">â€“</span>
+                <span class="summary-value" id="stat-cache-ratio">–</span>
             </div>
             <div class="card summary-card">
                 <span class="summary-label">Bandwidth (24h)</span>
-                <span class="summary-value" id="stat-bandwidth">â€“</span>
+                <span class="summary-value" id="stat-bandwidth">–</span>
                 <span class="summary-delta" id="delta-bandwidth"></span>
             </div>
             <div class="card summary-card">
                 <span class="summary-label">Threats (24h)</span>
-                <span class="summary-value" id="stat-threats">â€“</span>
+                <span class="summary-value" id="stat-threats">–</span>
                 <span class="summary-delta" id="delta-threats"></span>
             </div>
         </div>
@@ -66,7 +66,7 @@
             <h3 class="card-title">Quick Actions</h3>
             {% if not zone_configured %}
             <p class="action-desc" style="margin-bottom:0.75rem; opacity:0.75;">
-                âš ï¸ Cloudflare not configured â€“ Quick Actions are disabled.
+                ⚠️ Cloudflare not configured – Quick Actions are disabled.
                 Set <code>CLOUDFLARE_API_TOKEN</code> / <code>CLOUDFLARE_ZONE_ID</code> in the .env.
             </p>
             {% endif %}
@@ -391,7 +391,8 @@
             if (!res.ok) return;
             const data = await res.json();
             document.getElementById('stat-requests').textContent = fmtNumber(data.requests_24h);
-            document.getElementById('stat-cache-ratio').textContent = data.cache_ratio_pct + '%';
+            document.getElementById('stat-cache-ratio').textContent =
+                (data.cache_ratio_pct === null || data.cache_ratio_pct === undefined) ? '–' : data.cache_ratio_pct + '%';
             document.getElementById('stat-bandwidth').textContent = fmtNumber(data.bandwidth_24h_mb) + ' MB';
             document.getElementById('stat-threats').textContent = fmtNumber(data.threats_24h);
             document.getElementById('live-text').textContent = fmtRelativeTime(data.last_updated);
@@ -407,7 +408,7 @@
             }
             const up = pct >= 0;
             const good = invert ? !up : up;
-            el.textContent = (up ? 'â–² ' : 'â–¼ ') + Math.abs(pct).toFixed(1) + '% vs. yesterday';
+            el.textContent = (up ? '▲ ' : '▼ ') + Math.abs(pct).toFixed(1) + '% vs. yesterday';
             el.className = 'summary-delta ' + (good ? 'up' : 'down');
         }
 
@@ -420,7 +421,7 @@
             }
             const trend = (b.trend_pct === null || b.trend_pct === undefined)
                 ? 'no comparison'
-                : (b.trend_pct >= 0 ? 'â–² +' + b.trend_pct.toFixed(0) + '%' : 'â–¼ ' + b.trend_pct.toFixed(0) + '%');
+                : (b.trend_pct >= 0 ? '▲ +' + b.trend_pct.toFixed(0) + '%' : '▼ ' + b.trend_pct.toFixed(0) + '%');
             const list = (items, key) => (items && items.length
                 ? '<table class="briefing-table"><tbody>' +
                   items.map((it, i) =>
@@ -429,7 +430,7 @@
                     `<td class="count">${fmtNumber(it.count)}</td></tr>`
                   ).join('') +
                   '</tbody></table>'
-                : '<p class="briefing-empty">â€“</p>');
+                : '<p class="briefing-empty">–</p>');
             container.innerHTML =
                 '<div class="briefing-stats">' +
                     `<div class="briefing-stat"><span class="briefing-value">${fmtNumber(b.total_7d)}</span><span class="briefing-label">Events (7 days)</span></div>` +
@@ -520,6 +521,11 @@
             canvas.style.display = isEmpty ? 'none' : 'block';
             if (empty) empty.style.display = isEmpty ? 'block' : 'none';
             if (loading) loading.style.display = 'none';
+            // Collapse the chart area on empty states so the message is clearly visible
+            const wrap = canvas.parentElement;
+            if (wrap && wrap.classList.contains('chart-wrap')) {
+                wrap.style.display = isEmpty ? 'none' : '';
+            }
         }
 
         async function loadTimeseries() {
@@ -543,7 +549,7 @@
                     const peakEl = document.getElementById('requests-peak');
                     if (peakEl) {
                         if (avg > 0) {
-                            peakEl.textContent = `Peak: ${data.labels[peakIdx]} Â· ${fmtNumber(peakVal)} req (${(peakVal / avg).toFixed(1)}x avg)`;
+                            peakEl.textContent = `Peak: ${data.labels[peakIdx]} · ${fmtNumber(peakVal)} req (${(peakVal / avg).toFixed(1)}x avg)`;
                             peakEl.style.display = '';
                         } else {
                             peakEl.style.display = 'none';
@@ -810,6 +816,12 @@
             }
         }
 
+        function setEmptyReason(canvasId, reason) {
+            if (!reason) return;
+            const el = document.getElementById(canvasId + '-empty');
+            if (el) el.textContent = 'No data - ' + reason;
+        }
+
         async function loadExtras() {
             const res = await authFetch('/api/analytics/extras');
             if (!res.ok) return;
@@ -820,6 +832,11 @@
             renderStackedArea('chart-country-trend', d.country_trend.labels, d.country_trend.series);
             renderStatusTrend(d.status_trend);
             renderTopUrls(d.top_urls);
+            setEmptyReason('chart-content-types', d.content_types.reason);
+            setEmptyReason('chart-content-type-bytes', d.content_types.reason);
+            setEmptyReason('chart-country-trend', d.country_trend.reason);
+            setEmptyReason('chart-status-trend', d.status_trend.reason);
+            setEmptyReason('chart-top-urls', d.top_urls.reason);
         }
 
         function stackedLineOptions() {
@@ -883,7 +900,7 @@
             extraCharts['chart-top-urls'] = new Chart(canvas, {
                 type: 'bar',
                 data: {
-                    labels: urls.map(u => u.path.length > 40 ? u.path.slice(0, 39) + 'â€¦' : u.path),
+                    labels: urls.map(u => u.path.length > 40 ? u.path.slice(0, 39) + '…' : u.path),
                     datasets: [{
                         label: 'Requests',
                         data: urls.map(u => u.requests),
@@ -930,10 +947,10 @@
             body.innerHTML = events.map(e => `
                 <tr>
                     <td>${new Date(e.timestamp).toLocaleString('en-GB')}</td>
-                    <td>${esc(e.client_ip) || 'â€“'}</td>
-                    <td>${esc(e.country) || 'â€“'}</td>
-                    <td><span class="action-badge ${actionBadgeClass(e.action)}">${esc(e.action) || 'â€“'}</span></td>
-                    <td style="max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(e.path)}">${esc(e.path) || 'â€“'}</td>
+                    <td>${esc(e.client_ip) || '–'}</td>
+                    <td>${esc(e.country) || '–'}</td>
+                    <td><span class="action-badge ${actionBadgeClass(e.action)}">${esc(e.action) || '–'}</span></td>
+                    <td style="max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${esc(e.path)}">${esc(e.path) || '–'}</td>
                 </tr>
             `).join('');
         }

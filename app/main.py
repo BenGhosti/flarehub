@@ -798,6 +798,21 @@ async def analytics_extras(
             "urls": [{"path": r.path, "requests": r.requests} for r in url_rows],
         }
 
+    # Surface the collector's failure reason (e.g. plan-restricted dataset) so the
+    # empty chart states explain why no data exists.
+    last_run = db.query(CollectorRun).order_by(desc(CollectorRun.timestamp)).first()
+    last_message = last_run.message if last_run and last_run.message else ""
+
+    def _reason(*keywords):
+        if any(kw in last_message for kw in keywords):
+            return last_message
+        return None
+
+    content_types["reason"] = _reason("Content types skipped")
+    country_trend["reason"] = _reason("Passive analytics skipped")
+    status_trend["reason"] = _reason("Passive analytics skipped")
+    top_urls["reason"] = _reason("Passive analytics skipped")
+
     return {
         "content_types": content_types,
         "country_trend": country_trend,
@@ -819,7 +834,7 @@ async def analytics_summary(
     total_cached = sum(r.requests_cached for r in raw_rows) + sum(r.requests_cached for r in hourly_rows)
     total_bandwidth = sum(r.bandwidth_total_bytes for r in raw_rows) + sum(r.bandwidth_total_bytes for r in hourly_rows)
     total_threats = sum(r.threats_total for r in raw_rows) + sum(r.threats_total for r in hourly_rows)
-    cache_ratio = (total_cached / total_requests * 100) if total_requests else 0
+    cache_ratio = (total_cached / total_requests * 100) if total_requests else None
 
     last_updated = None
     if raw_rows:
@@ -829,7 +844,7 @@ async def analytics_summary(
 
     return {
         "requests_24h": total_requests,
-        "cache_ratio_pct": round(cache_ratio, 1),
+        "cache_ratio_pct": round(cache_ratio, 1) if cache_ratio is not None else None,
         "bandwidth_24h_mb": round(total_bandwidth / 1_000_000, 2),
         "threats_24h": total_threats,
         "last_updated": last_updated,

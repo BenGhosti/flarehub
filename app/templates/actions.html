@@ -22,7 +22,7 @@
 
         {% if not zone_configured %}
         <div class="card banner banner-danger">
-            <strong>âš ï¸ Cloudflare not configured</strong>
+            <strong>⚠️ Cloudflare not configured</strong>
             <p>Please set <code>CLOUDFLARE_API_TOKEN</code> and <code>CLOUDFLARE_ZONE_ID</code> in the .env to use these actions.</p>
         </div>
         {% endif %}
@@ -30,7 +30,7 @@
         {% if feature_purge_cache %}
         <div class="card" style="text-align:left;">
             <h3 class="card-title">Clear cache</h3>
-            <p class="action-desc">Purges the zone's edge cache â€“ uncritical, only affects cached content.</p>
+            <p class="action-desc">Purges the zone's edge cache – uncritical, only affects cached content.</p>
 
             <div style="margin: 1.25rem 0;">
                 <button id="btn-purge-all" type="button">Purge entire cache</button>
@@ -54,7 +54,7 @@
             <p class="action-desc">Run the collector manually (immediately fetches fresh metrics from Cloudflare).</p>
             <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:0.75rem; margin-top: 1.25rem;">
                 <div>
-                    <span style="font-size: 0.85rem;">Last run: <strong id="collector-last-run">â€“</strong></span>
+                    <span style="font-size: 0.85rem;">Last run: <strong id="collector-last-run">–</strong></span>
                     <p id="collector-last-message" style="font-size: 0.78rem; opacity: 0.65; margin-top: 2px;"></p>
                 </div>
                 <button id="btn-run-collector" type="button" class="btn-small">Run now</button>
@@ -170,7 +170,7 @@
             const lastMsgEl = document.getElementById('collector-last-message');
             if (data.last_run) {
                 lastRunEl.textContent = fmtRelativeTime(data.last_run.timestamp) +
-                    (data.last_run.success ? ' Â· OK' : ' Â· Error');
+                    (data.last_run.success ? ' · OK' : ' · Error');
                 lastRunEl.style.color = data.last_run.success ? 'var(--highlight-color)' : 'var(--danger-color)';
                 lastMsgEl.textContent = data.last_run.message || '';
             } else {
@@ -216,7 +216,7 @@
             }
             const rows = Object.entries(SETTING_LABELS).map(([key, label]) => {
                 const value = data.settings[key];
-                const text = (value === null || value === undefined) ? 'â€“' : String(value);
+                const text = (value === null || value === undefined) ? '–' : String(value);
                 const badgeClass = (text === 'on' || text === 'true') ? 'on' : (text === 'off' || text === 'false') ? 'off' : '';
                 return `<tr><td>${label}</td><td><span class="zone-badge ${badgeClass}">${esc(text)}</span></td></tr>`;
             }).join('');
