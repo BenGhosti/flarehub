@@ -3,6 +3,9 @@ services:
     build: .
     container_name: flarehub
     restart: unless-stopped
+    user: "1001:1001"
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
     # Container runs as UID 1001 (non-root). The mounted host directory
     # must be writable by UID 1001, run once:
     #   chown -R 1001:1001 ./data
@@ -16,6 +19,7 @@ services:
       - .env
     environment:
       - TZ=${TZ:-Europe/Berlin}
+      - HOME=/tmp
     # Note: Docker Compose interpolates env_file values. If a value in .env
     # contains "$" (e.g. a bcrypt hash), escape it as "$$". Plaintext values
     # (like AUTH_PIN) are unaffected.
